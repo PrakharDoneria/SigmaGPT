@@ -1,0 +1,129 @@
+/* ═══════════════════════════════════════
+   CSS VARIABLES — DARK THEME (default)
+═══════════════════════════════════════ */
+:root,
+[data-theme="dark"] {
+  --bg-sidebar:          #171717;
+  --bg-main:             #212121;
+  --bg-card:             #2a2a2a;
+  --bg-input:            rgba(255, 255, 255, 0.06);
+  --bg-input-box:        #2a2a2a;
+  --bg-hover:            rgba(180, 180, 180, 0.07);
+  --bg-active:           rgba(124, 58, 237, 0.12);
+  --bg-dropdown:         #1e1e1e;
+  --bg-user-bubble:      #323232;
+  --bg-assistant-bubble: #272727;
+
+  --text-primary:   #ececec;
+  --text-secondary: #888888;
+
+  --accent:       #7c3aed;
+  --accent-hover: #6d28d9;
+  --accent-light: #a78bfa;
+  --accent-dim:   rgba(124, 58, 237, 0.12);
+
+  --border:  rgba(255, 255, 255, 0.07);
+  --shadow:  rgba(0, 0, 0, 0.4);
+}
+
+/* ── LIGHT THEME ── */
+[data-theme="light"] {
+  --bg-sidebar:          #f5f5f5;
+  --bg-main:             #ffffff;
+  --bg-card:             #f0f0f0;
+  --bg-input:            rgba(0, 0, 0, 0.05);
+  --bg-input-box:        #f4f4f4;
+  --bg-hover:            rgba(0, 0, 0, 0.05);
+  --bg-active:           rgba(124, 58, 237, 0.08);
+  --bg-dropdown:         #ffffff;
+  --bg-user-bubble:      #e8e8e8;
+  --bg-assistant-bubble: #f5f5f5;
+
+  --text-primary:   #1a1a1a;
+  --text-secondary: #666666;
+
+  --accent:       #7c3aed;
+  --accent-hover: #6d28d9;
+  --accent-light: #7c3aed;
+  --accent-dim:   rgba(124, 58, 237, 0.08);
+
+  --border:  rgba(0, 0, 0, 0.09);
+  --shadow:  rgba(0, 0, 0, 0.12);
+}
+
+/* ═══════════════════════════════════════
+   GLOBAL RESET
+═══════════════════════════════════════ */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+  background-color: var(--bg-main);
+  color: var(--text-primary);
+  overflow: hidden;
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── App shell ── */
+.app {
+  display: flex;
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+  transition: background 0.2s;
+}
+
+/* ── Offline banner ── */
+.offline-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  background: #ef4444;
+  color: #fff;
+  text-align: center;
+  padding: 6px 16px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  z-index: 9999;
+  letter-spacing: 0.01em;
+}
+
+/* ── Scrollbar global ── */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+*::-webkit-scrollbar { width: 5px; height: 5px; }
+*::-webkit-scrollbar-thumb { background: var(--border); border-radius: 5px; }
+*::-webkit-scrollbar-track { background: transparent; }
+
+/* ── Button reset ── */
+button {
+  font-family: inherit;
+  font-size: inherit;
+  cursor: pointer;
+}
+
+/* ── Input reset ── */
+input, textarea {
+  font-family: inherit;
+  font-size: inherit;
+  color: var(--text-primary);
+}
+
+/* ── Transitions ── */
+.app, .sidebar, .chatWindow {
+  transition: background-color 0.2s ease;
+}

@@ -1,0 +1,11 @@
+# macOS system files
+.DS_Store
+
+# Node.js dependencies
+node_modules/
+
+# Environment variables
+.env
+
+# Firebase secret key — NEVER push this!
+Backend/serviceAccountKey.json.json

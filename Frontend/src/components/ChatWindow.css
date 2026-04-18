@@ -1,0 +1,263 @@
+/* ═══════════════════════════════════════
+   CHAT WINDOW
+═══════════════════════════════════════ */
+
+.chatWindow {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: var(--bg-main);
+  position: relative;
+  overflow: hidden;
+}
+
+/* ── Navbar ── */
+.navbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-main);
+  flex-shrink: 0;
+  z-index: 10;
+}
+
+.navLeft {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.navTitle {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.navName {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.navModel {
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+}
+
+.navRight {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.navIconBtn {
+  background: transparent;
+  border: none;
+  padding: 7px;
+  border-radius: 8px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.12s, color 0.12s;
+}
+
+.navIconBtn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* ── Nav dropdown ── */
+.navDropdownWrap {
+  position: relative;
+}
+
+.navDropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  background: var(--bg-dropdown);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 6px;
+  min-width: 180px;
+  z-index: 100;
+  box-shadow: 0 8px 24px var(--shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.navDropdown button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 7px;
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  font-size: 0.82rem;
+  width: 100%;
+  text-align: left;
+  transition: background 0.12s;
+}
+
+.navDropdown button:hover { background: var(--bg-hover); }
+.navDropdown button.danger { color: #ef4444; }
+.navDropdown button.danger:hover { background: rgba(239,68,68,0.1); }
+
+/* ── Chat body ── */
+.chatBody {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+.chatBody::-webkit-scrollbar { width: 5px; }
+.chatBody::-webkit-scrollbar-thumb { background: var(--border); border-radius: 5px; }
+
+/* ── Loading bar ── */
+.loadingBar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 24px;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+/* ── Input area ── */
+.inputArea {
+  padding: 12px 20px 16px;
+  flex-shrink: 0;
+  border-top: 1px solid var(--border);
+}
+
+.inputBox {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  max-width: 760px;
+  margin: 0 auto;
+  background: var(--bg-input-box);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 8px 10px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.inputBox:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-dim);
+}
+
+.chatTextarea {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  resize: none;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: var(--text-primary);
+  font-family: inherit;
+  padding: 4px 4px;
+  max-height: 160px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.chatTextarea::placeholder { color: var(--text-secondary); }
+
+.inputIconBtn {
+  background: transparent;
+  border: none;
+  padding: 7px;
+  border-radius: 8px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  transition: background 0.12s, color 0.12s;
+  align-self: flex-end;
+}
+
+.inputIconBtn:hover { background: var(--bg-hover); color: var(--text-primary); }
+
+.inputIconBtn.listening {
+  color: #ef4444;
+  background: rgba(239,68,68,0.1);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.5; }
+}
+
+.sendBtn {
+  background: var(--bg-hover);
+  border: none;
+  padding: 8px;
+  border-radius: 10px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  transition: background 0.15s, color 0.15s, transform 0.1s;
+  align-self: flex-end;
+}
+
+.sendBtn:hover { background: var(--bg-hover); }
+
+.sendBtn.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.sendBtn.active:hover {
+  background: var(--accent-hover);
+  transform: scale(1.05);
+}
+
+.sendBtn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+/* ── Input hint ── */
+.inputHint {
+  text-align: center;
+  font-size: 0.68rem;
+  color: var(--text-secondary);
+  margin: 6px 0 0;
+  opacity: 0.6;
+  max-width: 760px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.inputHint kbd {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 0 4px;
+  font-size: 0.65rem;
+  font-family: monospace;
+}
+
+/* ── Responsive ── */
+@media (max-width: 600px) {
+  .navbar { padding: 10px 14px; }
+  .inputArea { padding: 10px 12px 14px; }
+  .navModel { display: none; }
+}
