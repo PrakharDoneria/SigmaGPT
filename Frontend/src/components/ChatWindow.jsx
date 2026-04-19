@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { jsPDF } from "jspdf";
 
-const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8080/api/chat";
+const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8080";
 
 function ChatWindow() {
   const {
