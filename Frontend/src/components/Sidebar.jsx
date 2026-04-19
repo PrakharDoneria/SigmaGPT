@@ -9,29 +9,25 @@ import {
   MessageSquare,
 } from "lucide-react";
 
-// ✅ BASE URL
+// ✅ BASE URL — no trailing slash, no /api/chat
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8080";
 
-// ✅ Try multiple possible endpoint patterns
-const POSSIBLE_ENDPOINTS = {
-  THREADS: [
-    `${API_BASE}/api/chat/threads`,
-    `${API_BASE}/threads`,
-    `${API_BASE}/api/threads`,
-  ],
-};
+// ✅ All endpoints built from base
+const THREADS_URL = `${API_BASE}/api/chat/threads`;
+const THREAD_URL  = (id) => `${API_BASE}/api/chat/threads/${id}`;
+const CHAT_URL    = `${API_BASE}/api/chat/chat`;
 
 const PERSONAS = [
-  { id: "general", name: "SigmaGPT", icon: <Bot size={15} /> },
-  { id: "coder", name: "Sigma Coder", icon: <Code2 size={15} /> },
-  { id: "writer", name: "Sigma Writer", icon: <PenLine size={15} /> },
+  { id: "general",   name: "SigmaGPT",        icon: <Bot size={15} /> },
+  { id: "coder",     name: "Sigma Coder",      icon: <Code2 size={15} /> },
+  { id: "writer",    name: "Sigma Writer",     icon: <PenLine size={15} /> },
   { id: "explainer", name: "Sigma Simplified", icon: <Lightbulb size={15} /> },
-  { id: "mentor", name: "Sigma Mentor", icon: <GraduationCap size={15} /> },
+  { id: "mentor",    name: "Sigma Mentor",     icon: <GraduationCap size={15} /> },
 ];
 
 const MODELS = [
-  { id: "smart", name: "Smart", desc: "Best quality", icon: <Brain size={14} /> },
-  { id: "fast", name: "Fast", desc: "Quick replies", icon: <Zap size={14} /> },
+  { id: "smart",    name: "Smart",    desc: "Best quality",  icon: <Brain size={14} /> },
+  { id: "fast",     name: "Fast",     desc: "Quick replies", icon: <Zap size={14} /> },
   { id: "balanced", name: "Balanced", desc: "Middle ground", icon: <Scale size={14} /> },
 ];
 
@@ -49,7 +45,6 @@ function formatThreadDate(dateStr) {
   if (diffHours < 24) return `${diffHours}h ago`;
   if (diffDays === 1) return "Yesterday";
   if (diffDays < 7) return `${diffDays}d ago`;
-
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
@@ -66,95 +61,44 @@ function Sidebar() {
     startNewChat, isOnline,
   } = useContext(MyContext);
 
-  // ✅ STATE
   const [isLoadingThreads, setIsLoadingThreads] = useState(false);
-  const [renamingId, setRenamingId] = useState(null);
+  const [renamingId, setRenamingId]   = useState(null);
   const [renameValue, setRenameValue] = useState("");
-  const [workingEndpoint, setWorkingEndpoint] = useState(null);
-
+  const [showPersonas, setShowPersonas] = useState(false);
+  const [showModels, setShowModels]     = useState(false);
   const renameInputRef = useRef(null);
 
-  // ✅ FETCH THREADS WITH AUTO-DETECTION
+  // ✅ Fetch all threads
   const getAllThreads = async () => {
     setIsLoadingThreads(true);
-    
-    // If we already found a working endpoint, use it
-    if (workingEndpoint) {
-      try {
-        const res = await fetch(workingEndpoint);
-        if (res.ok) {
-          const data = await res.json();
-          setAllThreads(Array.isArray(data) ? data : []);
-          setIsLoadingThreads(false);
-          return;
-        }
-      } catch (err) {
-        console.error("Failed with saved endpoint:", err);
-      }
+    try {
+      const res = await fetch(THREADS_URL);
+      if (!res.ok) throw new Error(`Status: ${res.status}`);
+      const data = await res.json();
+      setAllThreads(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error("Failed to fetch threads:", err.message);
+      setAllThreads([]);
     }
-
-    // Try all possible endpoints
-    for (const endpoint of POSSIBLE_ENDPOINTS.THREADS) {
-      try {
-        console.log(`Trying endpoint: ${endpoint}`);
-        const res = await fetch(endpoint);
-        
-        if (res.ok) {
-          const data = await res.json();
-          console.log(`✅ Success with: ${endpoint}`);
-          setWorkingEndpoint(endpoint);
-          setAllThreads(Array.isArray(data) ? data : []);
-          setIsLoadingThreads(false);
-          return;
-        } else {
-          console.log(`❌ ${endpoint} returned ${res.status}`);
-        }
-      } catch (err) {
-        console.log(`❌ ${endpoint} failed:`, err.message);
-      }
-    }
-    
-    // All endpoints failed
-    console.error("All endpoints failed");
-    setAllThreads([]);
     setIsLoadingThreads(false);
   };
 
-  useEffect(() => {
-    getAllThreads();
-  }, []);
+  useEffect(() => { getAllThreads(); }, [currThreadId]);
 
   useEffect(() => {
-    if (renamingId && renameInputRef.current) {
-      renameInputRef.current.focus();
-    }
+    if (renamingId && renameInputRef.current) renameInputRef.current.focus();
   }, [renamingId]);
 
-  // ✅ Get base URL for a specific thread ID
-  const getThreadUrl = (threadId) => {
-    if (!workingEndpoint) return null;
-    return `${workingEndpoint}/${threadId}`;
-  };
-
-  // ✅ LOAD SINGLE THREAD
+  // ✅ Load single thread
   const handleThreadClick = async (threadId) => {
     if (threadId === currThreadId) return;
-
     setCurrThreadId(threadId);
     setIsNewChat(false);
     setPrompt("");
     setReply(null);
-
-    const url = getThreadUrl(threadId);
-    if (!url) {
-      toast.error("API endpoint not configured");
-      return;
-    }
-
     try {
-      const res = await fetch(url);
-      if (!res.ok) throw new Error(`Failed: ${res.status}`);
-
+      const res = await fetch(THREAD_URL(threadId));
+      if (!res.ok) throw new Error(`Status: ${res.status}`);
       const data = await res.json();
       setPrevChats(data.messages || []);
     } catch (err) {
@@ -163,117 +107,65 @@ function Sidebar() {
     }
   };
 
-  // ✅ DELETE THREAD
+  // ✅ Delete thread
   const handleDelete = async (e, threadId) => {
     e.stopPropagation();
-
-    const url = getThreadUrl(threadId);
-    if (!url) {
-      toast.error("API endpoint not configured");
-      return;
-    }
-
     try {
-      const res = await fetch(url, { method: "DELETE" });
-      if (!res.ok) throw new Error("Delete failed");
-
+      await fetch(THREAD_URL(threadId), { method: "DELETE" });
       setAllThreads(prev => prev.filter(t => t.threadId !== threadId));
-
-      if (threadId === currThreadId) {
-        startNewChat();
-      }
-
+      if (threadId === currThreadId) startNewChat();
       toast.success("Chat deleted!");
-    } catch (err) {
-      console.error(err);
-      toast.error("Failed to delete!");
-    }
+    } catch { toast.error("Failed to delete!"); }
   };
 
-  // ✅ PIN / UNPIN
+  // ✅ Pin/Unpin thread
   const handlePin = async (e, threadId) => {
     e.stopPropagation();
-
-    const url = getThreadUrl(threadId);
-    if (!url) {
-      toast.error("API endpoint not configured");
-      return;
-    }
-
     try {
-      const res = await fetch(`${url}/pin`, { method: "PUT" });
-      if (!res.ok) throw new Error("Pin failed");
-
+      const res = await fetch(`${THREAD_URL(threadId)}/pin`, { method: "PUT" });
       const data = await res.json();
-
-      setAllThreads(prev =>
-        prev.map(t =>
-          t.threadId === threadId ? { ...t, pinned: data.pinned } : t
-        )
-      );
-
+      setAllThreads(prev => prev.map(t =>
+        t.threadId === threadId ? { ...t, pinned: data.pinned } : t
+      ));
       toast.success(data.pinned ? "📌 Chat pinned!" : "Chat unpinned!");
-    } catch (err) {
-      console.error(err);
-      toast.error("Failed to pin!");
-    }
+    } catch { toast.error("Failed to pin!"); }
   };
 
-  // ✅ START RENAME
+  // ✅ Rename thread
   const startRename = (e, thread) => {
     e.stopPropagation();
     setRenamingId(thread.threadId);
     setRenameValue(thread.title || "");
   };
 
-  // ✅ RENAME THREAD
   const handleRename = async (threadId) => {
-    if (!renameValue.trim()) {
-      setRenamingId(null);
-      return;
-    }
-
-    const url = getThreadUrl(threadId);
-    if (!url) {
-      toast.error("API endpoint not configured");
-      return;
-    }
-
+    if (!renameValue.trim()) { setRenamingId(null); return; }
     try {
-      const res = await fetch(`${url}/rename`, {
+      await fetch(`${THREAD_URL(threadId)}/rename`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title: renameValue.trim() }),
       });
-
-      if (!res.ok) throw new Error("Rename failed");
-
-      setAllThreads(prev =>
-        prev.map(t =>
-          t.threadId === threadId ? { ...t, title: renameValue.trim() } : t
-        )
-      );
-
+      setAllThreads(prev => prev.map(t =>
+        t.threadId === threadId ? { ...t, title: renameValue.trim() } : t
+      ));
       toast.success("Chat renamed!");
-    } catch (err) {
-      console.error(err);
-      toast.error("Failed to rename!");
-    }
-
+    } catch { toast.error("Failed to rename!"); }
     setRenamingId(null);
   };
 
-  // ✅ FILTERING
+  // ✅ Filter + split
   const filtered = Array.isArray(allThreads)
-    ? allThreads.filter(t =>
-        t.title?.toLowerCase().includes(searchQuery.toLowerCase())
-      )
+    ? allThreads.filter(t => t.title?.toLowerCase().includes(searchQuery.toLowerCase()))
     : [];
 
   const pinned = filtered.filter(t => t.pinned);
   const recent = filtered.filter(t => !t.pinned);
 
-  // ✅ THREAD ITEM
+  const currentPersona = PERSONAS.find(p => p.id === selectedPersona) || PERSONAS[0];
+  const currentModel   = MODELS.find(m => m.id === selectedModel) || MODELS[0];
+
+  // ✅ Thread item component
   const ThreadItem = ({ thread }) => (
     <li
       className={`threadItem ${thread.threadId === currThreadId ? "active" : ""}`}
@@ -302,33 +194,19 @@ function Sidebar() {
         <>
           <div className="threadInfo">
             <span className="threadTitle">{thread.title || "New Chat"}</span>
-            <span className="threadDate">
-              {formatThreadDate(thread.updatedAt)}
-            </span>
+            <span className="threadDate">{formatThreadDate(thread.updatedAt)}</span>
           </div>
-
           <div className="threadActions">
-            <button
-              className="iconBtn"
-              title={thread.pinned ? "Unpin" : "Pin"}
-              onClick={e => handlePin(e, thread.threadId)}
-            >
+            <button className="iconBtn" title={thread.pinned ? "Unpin" : "Pin"}
+              onClick={e => handlePin(e, thread.threadId)}>
               {thread.pinned ? <PinOff size={13} /> : <Pin size={13} />}
             </button>
-
-            <button
-              className="iconBtn"
-              title="Rename"
-              onClick={e => startRename(e, thread)}
-            >
+            <button className="iconBtn" title="Rename"
+              onClick={e => startRename(e, thread)}>
               <Pencil size={13} />
             </button>
-
-            <button
-              className="iconBtn danger"
-              title="Delete"
-              onClick={e => handleDelete(e, thread.threadId)}
-            >
+            <button className="iconBtn danger" title="Delete"
+              onClick={e => handleDelete(e, thread.threadId)}>
               <Trash2 size={13} />
             </button>
           </div>
@@ -337,14 +215,13 @@ function Sidebar() {
     </li>
   );
 
-  // ✅ COLLAPSED STATE
+  // ✅ Collapsed sidebar
   if (!isSidebarOpen) {
     return (
       <aside className="sidebar collapsed">
         <button className="collapseBtn" onClick={() => setIsSidebarOpen(true)}>
           <ChevronRight size={18} />
         </button>
-
         <button className="newChatIconBtn" onClick={startNewChat}>
           <Plus size={18} />
         </button>
@@ -352,38 +229,33 @@ function Sidebar() {
     );
   }
 
-  // ✅ MAIN RENDER
   return (
     <aside className="sidebar">
-      {/* HEADER */}
+      {/* ── Header ── */}
       <div className="sidebarHeader">
         <div className="logoArea">
           <span className="sigmaSymbol">Σ</span>
           <span className="appName">igmaGPT</span>
         </div>
-
         <div className="headerActions">
-          <button className="iconBtn" onClick={startNewChat}>
+          <button className="iconBtn" title="New Chat" onClick={startNewChat}>
             <Plus size={18} />
           </button>
-
-          <button className="iconBtn" onClick={() => setIsSidebarOpen(false)}>
+          <button className="iconBtn" title="Collapse" onClick={() => setIsSidebarOpen(false)}>
             <ChevronLeft size={18} />
           </button>
         </div>
       </div>
 
-      {/* SEARCH */}
+      {/* ── Search ── */}
       <div className="searchRow">
         <Search size={14} className="searchIcon" />
-
         <input
           className="searchInput"
           placeholder="Search chats..."
           value={searchQuery}
           onChange={e => setSearchQuery(e.target.value)}
         />
-
         {searchQuery && (
           <button className="iconBtn" onClick={() => setSearchQuery("")}>
             <X size={13} />
@@ -391,42 +263,23 @@ function Sidebar() {
         )}
       </div>
 
-      {/* THREAD LIST */}
+      {/* ── Thread list ── */}
       <div className="threadList">
-        {/* LOADING STATE */}
         {isLoadingThreads && (
           <p className="emptyThreads">Loading chats...</p>
         )}
-
-        {/* PINNED */}
         {!isLoadingThreads && pinned.length > 0 && (
           <>
-            <p className="sectionLabel">
-              <Pin size={11} /> Pinned
-            </p>
-            <ul>
-              {pinned.map(t => (
-                <ThreadItem key={t.threadId} thread={t} />
-              ))}
-            </ul>
+            <p className="sectionLabel"><Pin size={11} /> Pinned</p>
+            <ul>{pinned.map(t => <ThreadItem key={t.threadId} thread={t} />)}</ul>
           </>
         )}
-
-        {/* RECENT */}
         {!isLoadingThreads && recent.length > 0 && (
           <>
-            <p className="sectionLabel">
-              <MessageSquare size={11} /> Recent
-            </p>
-            <ul>
-              {recent.map(t => (
-                <ThreadItem key={t.threadId} thread={t} />
-              ))}
-            </ul>
+            <p className="sectionLabel"><MessageSquare size={11} /> Recent</p>
+            <ul>{recent.map(t => <ThreadItem key={t.threadId} thread={t} />)}</ul>
           </>
         )}
-
-        {/* EMPTY STATE */}
         {!isLoadingThreads && filtered.length === 0 && (
           <p className="emptyThreads">
             {searchQuery ? "No chats found" : "No chats yet — start one!"}
@@ -434,18 +287,58 @@ function Sidebar() {
         )}
       </div>
 
-      {/* FOOTER */}
+      {/* ── Footer ── */}
       <div className="sidebarFooter">
-        <div className={`onlineBadge ${isOnline ? "online" : "offline"}`}>
-          <span className="dot" /> {isOnline ? "Online" : "Offline"}
+        {/* Persona selector */}
+        <div className="selectorRow">
+          <button className="selectorBtn"
+            onClick={() => { setShowPersonas(!showPersonas); setShowModels(false); }}>
+            {currentPersona.icon}
+            <span>{currentPersona.name}</span>
+          </button>
+          {showPersonas && (
+            <div className="selectorMenu">
+              {PERSONAS.map(p => (
+                <button key={p.id}
+                  className={`selectorItem ${selectedPersona === p.id ? "selected" : ""}`}
+                  onClick={() => { setSelectedPersona(p.id); setShowPersonas(false); toast.success(`Switched to ${p.name}!`); }}>
+                  {p.icon} {p.name}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
-        <button
-          className="iconBtn"
-          onClick={() => setIsDarkMode(!isDarkMode)}
-        >
-          {isDarkMode ? <Sun size={16} /> : <Moon size={16} />}
-        </button>
+        {/* Model selector */}
+        <div className="selectorRow">
+          <button className="selectorBtn"
+            onClick={() => { setShowModels(!showModels); setShowPersonas(false); }}>
+            {currentModel.icon}
+            <span>{currentModel.name} — {currentModel.desc}</span>
+          </button>
+          {showModels && (
+            <div className="selectorMenu">
+              {MODELS.map(m => (
+                <button key={m.id}
+                  className={`selectorItem ${selectedModel === m.id ? "selected" : ""}`}
+                  onClick={() => { setSelectedModel(m.id); setShowModels(false); toast.success(`Switched to ${m.name} model!`); }}>
+                  {m.icon} <span>{m.name}</span> <small>{m.desc}</small>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Dark/light + online status */}
+        <div className="footerBottom">
+          <div className={`onlineBadge ${isOnline ? "online" : "offline"}`}>
+            <span className="dot" /> {isOnline ? "Online" : "Offline"}
+          </div>
+          <button className="iconBtn" title="Toggle theme"
+            onClick={() => setIsDarkMode(!isDarkMode)}>
+            {isDarkMode ? <Sun size={16} /> : <Moon size={16} />}
+          </button>
+        </div>
 
         <p className="poweredBy">Powered by Groq ⚡</p>
       </div>

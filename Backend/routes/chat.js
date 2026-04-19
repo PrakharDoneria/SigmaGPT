@@ -14,9 +14,9 @@ const router = express.Router();
 router.get("/threads", async (req, res) => {
   try {
     const snapshot = await db
-      .collection("threads")
-      .orderBy("updatedAt", "desc")
-      .get();
+  .collection("threads")
+  .orderBy("updatedAt", "desc")
+  .get();
 
     const threads = [];
     snapshot.forEach((doc) => {
