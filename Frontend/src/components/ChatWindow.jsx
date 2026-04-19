@@ -59,8 +59,8 @@ function ChatWindow() {
     const assistantPlaceholder = { role: "assistant", content: "", timestamp: new Date().toISOString(), persona: selectedPersona };
     setPrevChats(prev => [...prev, assistantPlaceholder]);
 
-    try {
-      const response = await fetch(`${API_BASE}/chat`, {
+    try {                    
+      const response = await fetch(`${API_BASE}/api/chat`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -106,7 +106,7 @@ function ChatWindow() {
 
             if (data.done) {
               // Refresh thread list to show new thread
-              const res = await fetch(`${API_BASE}/threads`);
+              const res = await fetch(`${API_BASE}/api/chat/threads`);
               const threads = await res.json();
               setAllThreads(threads);
             }
@@ -246,7 +246,7 @@ function ChatWindow() {
     setShowMoreMenu(false);
     if (!window.confirm("Clear all chats? This cannot be undone.")) return;
     try {
-      await fetch(`${API_BASE}/threads`, { method: "DELETE" });
+      await fetch(`${API_BASE}/api/chat/threads`, { method: "DELETE" });
       startNewChat();
       setAllThreads([]);
       toast.success("All chats cleared!");
