@@ -10,7 +10,21 @@ import {
 } from "lucide-react";
 import { jsPDF } from "jspdf";
 
+// ✅ BASE URL
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8080";
+
+// ✅ Possible chat endpoints to try
+const POSSIBLE_CHAT_ENDPOINTS = [
+  `${API_BASE}/api/chat`,
+  `${API_BASE}/chat`,
+  `${API_BASE}/api/messages`,
+];
+
+const POSSIBLE_THREADS_ENDPOINTS = [
+  `${API_BASE}/api/chat/threads`,
+  `${API_BASE}/threads`,
+  `${API_BASE}/api/threads`,
+];
 
 function ChatWindow() {
   const {
@@ -30,6 +44,9 @@ function ChatWindow() {
 
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [showMoreMenu, setShowMoreMenu]     = useState(false);
+  const [workingChatEndpoint, setWorkingChatEndpoint] = useState(POSSIBLE_CHAT_ENDPOINTS[0]);
+  const [workingThreadsEndpoint, setWorkingThreadsEndpoint] = useState(POSSIBLE_THREADS_ENDPOINTS[0]);
+  
   const chatBodyRef  = useRef(null);
   const inputRef     = useRef(null);
   const recognitionRef = useRef(null);
@@ -41,84 +58,127 @@ function ChatWindow() {
     }
   }, [prevChats]);
 
-  /* ── Send message with streaming ── */
+  /* ── Send message with streaming and endpoint detection ── */
   const getReply = async (overridePrompt) => {
     const text = (overridePrompt || prompt).trim();
     if (!text || isLoading) return;
-    if (!isOnline) { toast.error("You're offline! SigmaGPT needs internet."); return; }
+    if (!isOnline) { 
+      toast.error("You're offline! SigmaGPT needs internet."); 
+      return; 
+    }
 
     setIsLoading(true);
     setIsNewChat(false);
     setPrompt("");
 
     // 1. Add user message immediately
-    const userMsg = { role: "user", content: text, timestamp: new Date().toISOString() };
+    const userMsg = { 
+      role: "user", 
+      content: text, 
+      timestamp: new Date().toISOString() 
+    };
     setPrevChats(prev => [...prev, userMsg]);
 
     // 2. Add empty assistant placeholder
-    const assistantPlaceholder = { role: "assistant", content: "", timestamp: new Date().toISOString(), persona: selectedPersona };
+    const assistantPlaceholder = { 
+      role: "assistant", 
+      content: "", 
+      timestamp: new Date().toISOString(), 
+      persona: selectedPersona 
+    };
     setPrevChats(prev => [...prev, assistantPlaceholder]);
 
-    try {                    
-      const response = await fetch(`${API_URL}/api/chat`,{
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Accept": "text/event-stream",  // request streaming
-        },
-        body: JSON.stringify({
-          message: text,
-          threadId: currThreadId,
-          persona: selectedPersona,
-          model: selectedModel,
-        }),
-      });
+    let success = false;
+    let lastError = null;
 
-      if (!response.ok) throw new Error(`API Error: ${response.status}`);
+    // Try each endpoint
+    for (const endpoint of POSSIBLE_CHAT_ENDPOINTS) {
+      try {
+        console.log(`Trying chat endpoint: ${endpoint}`);
+        
+        const response = await fetch(endpoint, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Accept": "text/event-stream",
+          },
+          body: JSON.stringify({
+            message: text,
+            threadId: currThreadId,
+            persona: selectedPersona,
+            model: selectedModel,
+          }),
+        });
 
-      // 3. Read stream
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop(); // keep incomplete line
-
-        for (const line of lines) {
-          if (!line.startsWith("data: ")) continue;
-          try {
-            const data = JSON.parse(line.slice(6));
-
-            if (data.chunk) {
-              // Update last message with new chunk
-              setPrevChats(prev => {
-                const updated = [...prev];
-                const last = updated[updated.length - 1];
-                updated[updated.length - 1] = { ...last, content: last.content + data.chunk };
-                return updated;
-              });
-            }
-
-            if (data.done) {
-              // Refresh thread list to show new thread
-                                
-              const res = await fetch(`${API_BASE}/api/chat/threads`);
-              const threads = await res.json();
-              setAllThreads(threads);
-            }
-          } catch { /* skip malformed JSON */ }
+        if (!response.ok) {
+          console.log(`❌ ${endpoint} returned ${response.status}`);
+          lastError = `API Error: ${response.status}`;
+          continue;
         }
-      }
 
-    } catch (err) {
-      console.error("Chat error:", err);
-      toast.error("Failed to get response. Try again!");
-      // Remove placeholder on error
+        console.log(`✅ Success with: ${endpoint}`);
+        setWorkingChatEndpoint(endpoint);
+
+        // 3. Read stream
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop();
+
+          for (const line of lines) {
+            if (!line.startsWith("data: ")) continue;
+            try {
+              const data = JSON.parse(line.slice(6));
+
+              if (data.chunk) {
+                setPrevChats(prev => {
+                  const updated = [...prev];
+                  const last = updated[updated.length - 1];
+                  updated[updated.length - 1] = { 
+                    ...last, 
+                    content: last.content + data.chunk 
+                  };
+                  return updated;
+                });
+              }
+
+              if (data.done) {
+                // Refresh thread list
+                for (const threadsEndpoint of POSSIBLE_THREADS_ENDPOINTS) {
+                  try {
+                    const res = await fetch(threadsEndpoint);
+                    if (res.ok) {
+                      const threads = await res.json();
+                      setAllThreads(threads);
+                      setWorkingThreadsEndpoint(threadsEndpoint);
+                      break;
+                    }
+                  } catch {}
+                }
+              }
+            } catch { /* skip malformed JSON */ }
+          }
+        }
+
+        success = true;
+        break;
+
+      } catch (err) {
+        console.log(`❌ ${endpoint} failed:`, err.message);
+        lastError = err.message;
+      }
+    }
+
+    if (!success) {
+      console.error("All chat endpoints failed");
+      toast.error(lastError || "Failed to get response. Try again!");
       setPrevChats(prev => prev.slice(0, -1));
     }
 
@@ -166,7 +226,10 @@ function ChatWindow() {
 
   /* ── Export as TXT ── */
   const exportTXT = () => {
-    if (!prevChats.length) { toast.error("No chat to export!"); return; }
+    if (!prevChats.length) { 
+      toast.error("No chat to export!"); 
+      return; 
+    }
     const lines = prevChats.map(c => {
       const who = c.role === "user" ? "You" : "SigmaGPT";
       const time = c.timestamp ? new Date(c.timestamp).toLocaleString() : "";
@@ -186,13 +249,15 @@ function ChatWindow() {
 
   /* ── Export as PDF ── */
   const exportPDF = () => {
-    if (!prevChats.length) { toast.error("No chat to export!"); return; }
+    if (!prevChats.length) { 
+      toast.error("No chat to export!"); 
+      return; 
+    }
     try {
       const doc = new jsPDF();
       const pageW = doc.internal.pageSize.getWidth();
       let y = 20;
 
-      // Title
       doc.setFontSize(18);
       doc.setTextColor(124, 58, 237);
       doc.text("ΣigmaGPT", 20, y);
@@ -203,33 +268,37 @@ function ChatWindow() {
       doc.text(`Exported: ${new Date().toLocaleString()}`, 20, y);
       y += 10;
 
-      // Divider
       doc.setDrawColor(200, 200, 200);
       doc.line(20, y, pageW - 20, y);
       y += 10;
 
       prevChats.forEach(chat => {
         const who  = chat.role === "user" ? "You" : "SigmaGPT";
-        const time = chat.timestamp ? new Date(chat.timestamp).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }) : "";
+        const time = chat.timestamp 
+          ? new Date(chat.timestamp).toLocaleTimeString("en-US", { 
+              hour: "2-digit", 
+              minute: "2-digit" 
+            }) 
+          : "";
 
-        // Role label
         doc.setFontSize(9);
         doc.setTextColor(124, 58, 237);
         doc.text(`${who}  ${time}`, 20, y);
         y += 6;
 
-        // Message content
         doc.setFontSize(10);
         doc.setTextColor(30, 30, 30);
         const clean = chat.content.replace(/[#*`_~]/g, "");
         const lines = doc.splitTextToSize(clean, pageW - 40);
 
-        if (y + lines.length * 5 > 275) { doc.addPage(); y = 20; }
+        if (y + lines.length * 5 > 275) { 
+          doc.addPage(); 
+          y = 20; 
+        }
         doc.text(lines, 20, y);
         y += lines.length * 5 + 8;
       });
 
-      // Footer
       doc.setFontSize(8);
       doc.setTextColor(150, 150, 150);
       doc.text("Powered by SigmaGPT + Groq", 20, 290);
@@ -246,12 +315,20 @@ function ChatWindow() {
   const clearChat = async () => {
     setShowMoreMenu(false);
     if (!window.confirm("Clear all chats? This cannot be undone.")) return;
-    try {
-      await fetch(`${API_BASE}/api/chat/threads`, { method: "DELETE" });
-      startNewChat();
-      setAllThreads([]);
-      toast.success("All chats cleared!");
-    } catch { toast.error("Failed to clear chats!"); }
+    
+    for (const endpoint of POSSIBLE_THREADS_ENDPOINTS) {
+      try {
+        const res = await fetch(endpoint, { method: "DELETE" });
+        if (res.ok) {
+          startNewChat();
+          setAllThreads([]);
+          toast.success("All chats cleared!");
+          return;
+        }
+      } catch {}
+    }
+    
+    toast.error("Failed to clear chats!");
   };
 
   /* ── Quick prompt from empty state ── */
@@ -261,20 +338,30 @@ function ChatWindow() {
   };
 
   const currentPersonaName = {
-    general: "SigmaGPT", coder: "Sigma Coder",
-    writer: "Sigma Writer", explainer: "Sigma Simplified", mentor: "Sigma Mentor",
+    general: "SigmaGPT", 
+    coder: "Sigma Coder",
+    writer: "Sigma Writer", 
+    explainer: "Sigma Simplified", 
+    mentor: "Sigma Mentor",
   }[selectedPersona] || "SigmaGPT";
 
-  const currentModelLabel = { smart: "Smart", fast: "Fast", balanced: "Balanced" }[selectedModel] || "Smart";
+  const currentModelLabel = { 
+    smart: "Smart", 
+    fast: "Fast", 
+    balanced: "Balanced" 
+  }[selectedModel] || "Smart";
 
   return (
     <div className="chatWindow">
-
       {/* ── Navbar ── */}
       <div className="navbar">
         <div className="navLeft">
           {!isSidebarOpen && (
-            <button className="navIconBtn" onClick={() => setIsSidebarOpen(true)} title="Open sidebar">
+            <button 
+              className="navIconBtn" 
+              onClick={() => setIsSidebarOpen(true)} 
+              title="Open sidebar"
+            >
               <Menu size={18} />
             </button>
           )}
@@ -287,25 +374,46 @@ function ChatWindow() {
         <div className="navRight">
           {/* Export */}
           <div className="navDropdownWrap">
-            <button className="navIconBtn" title="Export chat" onClick={() => { setShowExportMenu(!showExportMenu); setShowMoreMenu(false); }}>
+            <button 
+              className="navIconBtn" 
+              title="Export chat" 
+              onClick={() => { 
+                setShowExportMenu(!showExportMenu); 
+                setShowMoreMenu(false); 
+              }}
+            >
               <Download size={17} />
             </button>
             {showExportMenu && (
               <div className="navDropdown">
-                <button onClick={exportTXT}><FileText size={14} /> Export as TXT</button>
-                <button onClick={exportPDF}><FileDown size={14} /> Export as PDF</button>
+                <button onClick={exportTXT}>
+                  <FileText size={14} /> Export as TXT
+                </button>
+                <button onClick={exportPDF}>
+                  <FileDown size={14} /> Export as PDF
+                </button>
               </div>
             )}
           </div>
 
           {/* More */}
           <div className="navDropdownWrap">
-            <button className="navIconBtn" title="More options" onClick={() => { setShowMoreMenu(!showMoreMenu); setShowExportMenu(false); }}>
+            <button 
+              className="navIconBtn" 
+              title="More options" 
+              onClick={() => { 
+                setShowMoreMenu(!showMoreMenu); 
+                setShowExportMenu(false); 
+              }}
+            >
               <MoreVertical size={17} />
             </button>
             {showMoreMenu && (
               <div className="navDropdown">
-                <button onClick={() => { startNewChat(); setShowMoreMenu(false); }}>
+                <button onClick={() => { 
+                  startNewChat(); 
+                  setShowMoreMenu(false); 
+                }}>
                   <RefreshCw size={14} /> New Chat
                 </button>
                 <button className="danger" onClick={clearChat}>
@@ -318,15 +426,27 @@ function ChatWindow() {
       </div>
 
       {/* ── Chat body ── */}
-      <div className="chatBody" ref={chatBodyRef}
-        onClick={() => { setShowExportMenu(false); setShowMoreMenu(false); }}>
+      <div 
+        className="chatBody" 
+        ref={chatBodyRef}
+        onClick={() => { 
+          setShowExportMenu(false); 
+          setShowMoreMenu(false); 
+        }}
+      >
         <Chat onQuickPrompt={handleQuickPrompt} />
       </div>
 
       {/* ── Loading indicator ── */}
       {isLoading && (
         <div className="loadingBar">
-          <ScaleLoader color="var(--accent)" height={18} width={2} radius={2} margin={2} />
+          <ScaleLoader 
+            color="var(--accent)" 
+            height={18} 
+            width={2} 
+            radius={2} 
+            margin={2} 
+          />
           <span>SigmaGPT is thinking...</span>
         </div>
       )}
@@ -345,12 +465,15 @@ function ChatWindow() {
           <textarea
             ref={inputRef}
             className="chatTextarea"
-            placeholder={isListening ? "🎙 Listening..." : "Ask SigmaGPT anything..."}
+            placeholder={
+              isListening 
+                ? "🎙 Listening..." 
+                : "Ask SigmaGPT anything..."
+            }
             value={prompt}
             rows={1}
             onChange={e => {
               setPrompt(e.target.value);
-              // Auto resize
               e.target.style.height = "auto";
               e.target.style.height = Math.min(e.target.scrollHeight, 160) + "px";
             }}
@@ -373,7 +496,8 @@ function ChatWindow() {
         </div>
 
         <p className="inputHint">
-          Press <kbd>Enter</kbd> to send · <kbd>Shift+Enter</kbd> for new line · SigmaGPT can make mistakes
+          Press <kbd>Enter</kbd> to send · <kbd>Shift+Enter</kbd> for new line · 
+          SigmaGPT can make mistakes
         </p>
       </div>
     </div>
