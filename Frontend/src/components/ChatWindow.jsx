@@ -14,11 +14,9 @@ import { jsPDF } from "jspdf";
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8080";
 
 // ✅ Possible chat endpoints to try
-const POSSIBLE_CHAT_ENDPOINTS = [
-  `${API_BASE}/api/chat`,
-  `${API_BASE}/chat`,
-  `${API_BASE}/api/messages`,
-];
+// CORRECT
+const CHAT_ENDPOINT   = `${API_BASE}/api/chat/chat`;
+const THREADS_ENDPOINT = `${API_BASE}/api/chat/threads`;
 
 const POSSIBLE_THREADS_ENDPOINTS = [
   `${API_BASE}/api/chat/threads`,

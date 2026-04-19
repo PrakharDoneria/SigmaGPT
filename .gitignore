@@ -7,5 +7,3 @@ node_modules/
 # Environment variables
 .env
 
-# Firebase secret key — NEVER push this!
-Backend/serviceAccountKey.json.json

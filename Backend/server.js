@@ -14,7 +14,6 @@ if (
   throw new Error("❌ Missing Firebase environment variables");
 }
 
-// ✅ Firebase config using ENV (no JSON file)
 const serviceAccount = {
   projectId: process.env.FIREBASE_PROJECT_ID,
   clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
