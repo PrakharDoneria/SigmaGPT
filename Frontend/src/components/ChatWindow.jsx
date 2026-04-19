@@ -60,7 +60,7 @@ function ChatWindow() {
     setPrevChats(prev => [...prev, assistantPlaceholder]);
 
     try {                    
-      const response = await fetch(`${API_BASE}/api/chat`, {
+      const response = await fetch(`${API_URL}/api/chat`,{
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -106,6 +106,7 @@ function ChatWindow() {
 
             if (data.done) {
               // Refresh thread list to show new thread
+                                
               const res = await fetch(`${API_BASE}/api/chat/threads`);
               const threads = await res.json();
               setAllThreads(threads);

@@ -9,19 +9,26 @@ import {
   MessageSquare,
 } from "lucide-react";
 
-const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8080/api/chat";
+// ✅ BASE URL ONLY (NO ROUTES)
+const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8080";
+
+// ✅ CENTRALIZED API ENDPOINTS
+const API = {
+  THREADS: `${API_BASE}/threads`,
+  CHAT: `${API_BASE}/api/chat`,
+};
 
 const PERSONAS = [
-  { id: "general",   name: "SigmaGPT",        icon: <Bot size={15} /> },
-  { id: "coder",     name: "Sigma Coder",      icon: <Code2 size={15} /> },
-  { id: "writer",    name: "Sigma Writer",     icon: <PenLine size={15} /> },
+  { id: "general", name: "SigmaGPT", icon: <Bot size={15} /> },
+  { id: "coder", name: "Sigma Coder", icon: <Code2 size={15} /> },
+  { id: "writer", name: "Sigma Writer", icon: <PenLine size={15} /> },
   { id: "explainer", name: "Sigma Simplified", icon: <Lightbulb size={15} /> },
-  { id: "mentor",    name: "Sigma Mentor",     icon: <GraduationCap size={15} /> },
+  { id: "mentor", name: "Sigma Mentor", icon: <GraduationCap size={15} /> },
 ];
 
 const MODELS = [
-  { id: "smart",    name: "Smart",    desc: "Best quality",  icon: <Brain size={14} /> },
-  { id: "fast",     name: "Fast",     desc: "Quick replies", icon: <Zap size={14} /> },
+  { id: "smart", name: "Smart", desc: "Best quality", icon: <Brain size={14} /> },
+  { id: "fast", name: "Fast", desc: "Quick replies", icon: <Zap size={14} /> },
   { id: "balanced", name: "Balanced", desc: "Middle ground", icon: <Scale size={14} /> },
 ];
 
@@ -39,6 +46,7 @@ function formatThreadDate(dateStr) {
   if (diffHours < 24) return `${diffHours}h ago`;
   if (diffDays === 1) return "Yesterday";
   if (diffDays < 7) return `${diffDays}d ago`;
+
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
@@ -55,271 +63,355 @@ function Sidebar() {
     startNewChat, isOnline,
   } = useContext(MyContext);
 
-  const [renamingId, setRenamingId]     = useState(null);
-  const [renameValue, setRenameValue]   = useState("");
+  // ✅ STATE (INSIDE COMPONENT)
+  const [isLoadingThreads, setIsLoadingThreads] = useState(false);
+  const [renamingId, setRenamingId] = useState(null);
+  const [renameValue, setRenameValue] = useState("");
   const [showPersonas, setShowPersonas] = useState(false);
-  const [showModels, setShowModels]     = useState(false);
+  const [showModels, setShowModels] = useState(false);
+
   const renameInputRef = useRef(null);
 
-  // ✅ FIXED — single function with array safety check
+  // ✅ FETCH THREADS (CLEAN + SAFE)
   const getAllThreads = async () => {
+    setIsLoadingThreads(true);
     try {
-      const res = await fetch(`${API_BASE}/threads`);
+      const res = await fetch(API.THREADS);
+
+      if (!res.ok) throw new Error(`API error: ${res.status}`);
+
       const data = await res.json();
-      if (Array.isArray(data)) {
-        setAllThreads(data);
-      } else {
-        setAllThreads([]);
-      }
+      setAllThreads(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error("Failed to fetch threads:", err);
       setAllThreads([]);
+    } finally {
+      setIsLoadingThreads(false);
     }
   };
 
-  useEffect(() => { getAllThreads(); }, [currThreadId]);
-
+  // ✅ RUN ONLY ONCE (IMPORTANT FIX)
   useEffect(() => {
-    if (renamingId && renameInputRef.current) renameInputRef.current.focus();
-  }, [renamingId]);
+    getAllThreads();
+  }, []);
 
-  const handleThreadClick = async (threadId) => {
-    if (threadId === currThreadId) return;
-    setCurrThreadId(threadId);
-    setIsNewChat(false);
-    setPrompt("");
-    setReply(null);
-    try {
-      const res = await fetch(`${API_BASE}/threads/${threadId}`);
-      const data = await res.json();
-      setPrevChats(data.messages || []);
-    } catch (err) {
-      toast.error("Failed to load chat!");
+  // ✅ focus rename input
+useEffect(() => {
+  if (renamingId && renameInputRef.current) {
+    renameInputRef.current.focus();
+  }
+}, [renamingId]);
+
+// ✅ LOAD SINGLE THREAD
+const handleThreadClick = async (threadId) => {
+  if (threadId === currThreadId) return;
+
+  setCurrThreadId(threadId);
+  setIsNewChat(false);
+  setPrompt("");
+  setReply(null);
+
+  try {
+    const res = await fetch(`${API.THREADS}/${threadId}`);
+
+    if (!res.ok) throw new Error(`Failed: ${res.status}`);
+
+    const data = await res.json();
+    setPrevChats(data.messages || []);
+  } catch (err) {
+    console.error(err);
+    toast.error("Failed to load chat!");
+  }
+};
+
+// ✅ DELETE THREAD
+const handleDelete = async (e, threadId) => {
+  e.stopPropagation();
+
+  try {
+    const res = await fetch(`${API.THREADS}/${threadId}`, {
+      method: "DELETE",
+    });
+
+    if (!res.ok) throw new Error("Delete failed");
+
+    setAllThreads(prev => prev.filter(t => t.threadId !== threadId));
+
+    if (threadId === currThreadId) {
+      startNewChat();
     }
-  };
 
-  const handleDelete = async (e, threadId) => {
-    e.stopPropagation();
-    try {
-      await fetch(`${API_BASE}/threads/${threadId}`, { method: "DELETE" });
-      setAllThreads(prev => prev.filter(t => t.threadId !== threadId));
-      if (threadId === currThreadId) startNewChat();
-      toast.success("Chat deleted!");
-    } catch { toast.error("Failed to delete!"); }
-  };
+    toast.success("Chat deleted!");
+  } catch (err) {
+    console.error(err);
+    toast.error("Failed to delete!");
+  }
+};
 
-  const handlePin = async (e, threadId) => {
-    e.stopPropagation();
-    try {
-      const res = await fetch(`${API_BASE}/threads/${threadId}/pin`, { method: "PUT" });
-      const data = await res.json();
-      setAllThreads(prev => prev.map(t =>
-        t.threadId === threadId ? { ...t, pinned: data.pinned } : t
-      ));
-      toast.success(data.pinned ? "📌 Chat pinned!" : "Chat unpinned!");
-    } catch { toast.error("Failed to pin!"); }
-  };
+// ✅ PIN / UNPIN
+const handlePin = async (e, threadId) => {
+  e.stopPropagation();
 
-  const startRename = (e, thread) => {
-    e.stopPropagation();
-    setRenamingId(thread.threadId);
-    setRenameValue(thread.title);
-  };
+  try {
+    const res = await fetch(`${API.THREADS}/${threadId}/pin`, {
+      method: "PUT",
+    });
 
-  const handleRename = async (threadId) => {
-    if (!renameValue.trim()) { setRenamingId(null); return; }
-    try {
-      await fetch(`${API_BASE}/threads/${threadId}/rename`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: renameValue.trim() }),
-      });
-      setAllThreads(prev => prev.map(t =>
-        t.threadId === threadId ? { ...t, title: renameValue.trim() } : t
-      ));
-      toast.success("Chat renamed!");
-    } catch { toast.error("Failed to rename!"); }
-    setRenamingId(null);
-  };
+    if (!res.ok) throw new Error("Pin failed");
 
-  // ✅ Always safe — guaranteed array
-  const filtered = Array.isArray(allThreads)
-    ? allThreads.filter(t => t.title?.toLowerCase().includes(searchQuery.toLowerCase()))
-    : [];
+    const data = await res.json();
 
-  const pinned = filtered.filter(t => t.pinned);
-  const recent = filtered.filter(t => !t.pinned);
-
-  const currentPersona = PERSONAS.find(p => p.id === selectedPersona) || PERSONAS[0];
-  const currentModel   = MODELS.find(m => m.id === selectedModel) || MODELS[0];
-
-  const ThreadItem = ({ thread }) => (
-    <li
-      className={`threadItem ${thread.threadId === currThreadId ? "active" : ""}`}
-      onClick={() => handleThreadClick(thread.threadId)}
-    >
-      {renamingId === thread.threadId ? (
-        <div className="renameRow" onClick={e => e.stopPropagation()}>
-          <input
-            ref={renameInputRef}
-            className="renameInput"
-            value={renameValue}
-            onChange={e => setRenameValue(e.target.value)}
-            onKeyDown={e => {
-              if (e.key === "Enter") handleRename(thread.threadId);
-              if (e.key === "Escape") setRenamingId(null);
-            }}
-          />
-          <button className="iconBtn green" onClick={() => handleRename(thread.threadId)}>
-            <Check size={13} />
-          </button>
-          <button className="iconBtn red" onClick={() => setRenamingId(null)}>
-            <X size={13} />
-          </button>
-        </div>
-      ) : (
-        <>
-          <div className="threadInfo">
-            <span className="threadTitle">{thread.title || "New Chat"}</span>
-            <span className="threadDate">{formatThreadDate(thread.updatedAt)}</span>
-          </div>
-          <div className="threadActions">
-            <button className="iconBtn" title={thread.pinned ? "Unpin" : "Pin"}
-              onClick={e => handlePin(e, thread.threadId)}>
-              {thread.pinned ? <PinOff size={13} /> : <Pin size={13} />}
-            </button>
-            <button className="iconBtn" title="Rename"
-              onClick={e => startRename(e, thread)}>
-              <Pencil size={13} />
-            </button>
-            <button className="iconBtn danger" title="Delete"
-              onClick={e => handleDelete(e, thread.threadId)}>
-              <Trash2 size={13} />
-            </button>
-          </div>
-        </>
-      )}
-    </li>
-  );
-
-  if (!isSidebarOpen) {
-    return (
-      <aside className="sidebar collapsed">
-        <button className="collapseBtn" onClick={() => setIsSidebarOpen(true)}>
-          <ChevronRight size={18} />
-        </button>
-        <button className="newChatIconBtn" onClick={startNewChat}>
-          <Plus size={18} />
-        </button>
-      </aside>
+    setAllThreads(prev =>
+      prev.map(t =>
+        t.threadId === threadId
+          ? { ...t, pinned: data.pinned }
+          : t
+      )
     );
+
+    toast.success(data.pinned ? "📌 Chat pinned!" : "Chat unpinned!");
+  } catch (err) {
+    console.error(err);
+    toast.error("Failed to pin!");
+  }
+};
+
+// ✅ START RENAME
+const startRename = (e, thread) => {
+  e.stopPropagation();
+  setRenamingId(thread.threadId);
+  setRenameValue(thread.title || "");
+};
+
+// ✅ RENAME THREAD
+const handleRename = async (threadId) => {
+  if (!renameValue.trim()) {
+    setRenamingId(null);
+    return;
   }
 
-  return (
-    <aside className="sidebar">
-      <div className="sidebarHeader">
-        <div className="logoArea">
-          <span className="sigmaSymbol">Σ</span>
-          <span className="appName">igmaGPT</span>
-        </div>
-        <div className="headerActions">
-          <button className="iconBtn" title="New Chat" onClick={startNewChat}>
-            <Plus size={18} />
-          </button>
-          <button className="iconBtn" title="Collapse" onClick={() => setIsSidebarOpen(false)}>
-            <ChevronLeft size={18} />
-          </button>
-        </div>
-      </div>
+  try {
+    const res = await fetch(`${API.THREADS}/${threadId}/rename`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: renameValue.trim() }),
+    });
 
-      <div className="searchRow">
-        <Search size={14} className="searchIcon" />
+    if (!res.ok) throw new Error("Rename failed");
+
+    setAllThreads(prev =>
+      prev.map(t =>
+        t.threadId === threadId
+          ? { ...t, title: renameValue.trim() }
+          : t
+      )
+    );
+
+    toast.success("Chat renamed!");
+  } catch (err) {
+    console.error(err);
+    toast.error("Failed to rename!");
+  }
+
+  setRenamingId(null);
+};
+
+// ✅ FILTERING (SAFE + CONTROLLED)
+const filtered = Array.isArray(allThreads)
+  ? allThreads.filter(t =>
+      t.title?.toLowerCase().includes(searchQuery.toLowerCase())
+    )
+  : [];
+
+const pinned = filtered.filter(t => t.pinned);
+const recent = filtered.filter(t => !t.pinned);
+
+// ✅ CURRENT SELECTION
+const currentPersona =
+  PERSONAS.find(p => p.id === selectedPersona) || PERSONAS[0];
+
+const currentModel =
+  MODELS.find(m => m.id === selectedModel) || MODELS[0];
+  // ✅ THREAD ITEM (optimized rendering)
+const ThreadItem = ({ thread }) => (
+  <li
+    className={`threadItem ${thread.threadId === currThreadId ? "active" : ""}`}
+    onClick={() => handleThreadClick(thread.threadId)}
+  >
+    {renamingId === thread.threadId ? (
+      <div className="renameRow" onClick={e => e.stopPropagation()}>
         <input
-          className="searchInput"
-          placeholder="Search chats..."
-          value={searchQuery}
-          onChange={e => setSearchQuery(e.target.value)}
+          ref={renameInputRef}
+          className="renameInput"
+          value={renameValue}
+          onChange={e => setRenameValue(e.target.value)}
+          onKeyDown={e => {
+            if (e.key === "Enter") handleRename(thread.threadId);
+            if (e.key === "Escape") setRenamingId(null);
+          }}
         />
-        {searchQuery && (
-          <button className="iconBtn" onClick={() => setSearchQuery("")}>
-            <X size={13} />
-          </button>
-        )}
+        <button className="iconBtn green" onClick={() => handleRename(thread.threadId)}>
+          <Check size={13} />
+        </button>
+        <button className="iconBtn red" onClick={() => setRenamingId(null)}>
+          <X size={13} />
+        </button>
       </div>
-
-      <div className="threadList">
-        {pinned.length > 0 && (
-          <>
-            <p className="sectionLabel"><Pin size={11} /> Pinned</p>
-            <ul>{pinned.map(t => <ThreadItem key={t.threadId} thread={t} />)}</ul>
-          </>
-        )}
-        {recent.length > 0 && (
-          <>
-            <p className="sectionLabel"><MessageSquare size={11} /> Recent</p>
-            <ul>{recent.map(t => <ThreadItem key={t.threadId} thread={t} />)}</ul>
-          </>
-        )}
-        {filtered.length === 0 && (
-          <p className="emptyThreads">
-            {searchQuery ? "No chats found" : "No chats yet — start one!"}
-          </p>
-        )}
-      </div>
-
-      <div className="sidebarFooter">
-        <div className="selectorRow">
-          <button className="selectorBtn"
-            onClick={() => { setShowPersonas(!showPersonas); setShowModels(false); }}>
-            {currentPersona.icon}
-            <span>{currentPersona.name}</span>
-          </button>
-          {showPersonas && (
-            <div className="selectorMenu">
-              {PERSONAS.map(p => (
-                <button key={p.id}
-                  className={`selectorItem ${selectedPersona === p.id ? "selected" : ""}`}
-                  onClick={() => { setSelectedPersona(p.id); setShowPersonas(false); toast.success(`Switched to ${p.name}!`); }}>
-                  {p.icon} {p.name}
-                </button>
-              ))}
-            </div>
-          )}
+    ) : (
+      <>
+        <div className="threadInfo">
+          <span className="threadTitle">{thread.title || "New Chat"}</span>
+          <span className="threadDate">
+            {formatThreadDate(thread.updatedAt)}
+          </span>
         </div>
 
-        <div className="selectorRow">
-          <button className="selectorBtn"
-            onClick={() => { setShowModels(!showModels); setShowPersonas(false); }}>
-            {currentModel.icon}
-            <span>{currentModel.name} — {currentModel.desc}</span>
+        <div className="threadActions">
+          <button
+            className="iconBtn"
+            title={thread.pinned ? "Unpin" : "Pin"}
+            onClick={e => handlePin(e, thread.threadId)}
+          >
+            {thread.pinned ? <PinOff size={13} /> : <Pin size={13} />}
           </button>
-          {showModels && (
-            <div className="selectorMenu">
-              {MODELS.map(m => (
-                <button key={m.id}
-                  className={`selectorItem ${selectedModel === m.id ? "selected" : ""}`}
-                  onClick={() => { setSelectedModel(m.id); setShowModels(false); toast.success(`Switched to ${m.name} model!`); }}>
-                  {m.icon} <span>{m.name}</span> <small>{m.desc}</small>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
 
-        <div className="footerBottom">
-          <div className={`onlineBadge ${isOnline ? "online" : "offline"}`}>
-            <span className="dot" /> {isOnline ? "Online" : "Offline"}
-          </div>
-          <button className="iconBtn" title="Toggle theme"
-            onClick={() => setIsDarkMode(!isDarkMode)}>
-            {isDarkMode ? <Sun size={16} /> : <Moon size={16} />}
+          <button
+            className="iconBtn"
+            title="Rename"
+            onClick={e => startRename(e, thread)}
+          >
+            <Pencil size={13} />
+          </button>
+
+          <button
+            className="iconBtn danger"
+            title="Delete"
+            onClick={e => handleDelete(e, thread.threadId)}
+          >
+            <Trash2 size={13} />
           </button>
         </div>
+      </>
+    )}
+  </li>
+);
 
-        <p className="poweredBy">Powered by Groq ⚡</p>
-      </div>
+// ✅ COLLAPSED STATE (unchanged logic but cleaner)
+if (!isSidebarOpen) {
+  return (
+    <aside className="sidebar collapsed">
+      <button className="collapseBtn" onClick={() => setIsSidebarOpen(true)}>
+        <ChevronRight size={18} />
+      </button>
+
+      <button className="newChatIconBtn" onClick={startNewChat}>
+        <Plus size={18} />
+      </button>
     </aside>
   );
+}
+
+// ✅ MAIN RENDER
+return (
+  <aside className="sidebar">
+    {/* HEADER */}
+    <div className="sidebarHeader">
+      <div className="logoArea">
+        <span className="sigmaSymbol">Σ</span>
+        <span className="appName">igmaGPT</span>
+      </div>
+
+      <div className="headerActions">
+        <button className="iconBtn" onClick={startNewChat}>
+          <Plus size={18} />
+        </button>
+
+        <button className="iconBtn" onClick={() => setIsSidebarOpen(false)}>
+          <ChevronLeft size={18} />
+        </button>
+      </div>
+    </div>
+
+    {/* SEARCH */}
+    <div className="searchRow">
+      <Search size={14} className="searchIcon" />
+
+      <input
+        className="searchInput"
+        placeholder="Search chats..."
+        value={searchQuery}
+        onChange={e => setSearchQuery(e.target.value)}
+      />
+
+      {searchQuery && (
+        <button className="iconBtn" onClick={() => setSearchQuery("")}>
+          <X size={13} />
+        </button>
+      )}
+    </div>
+
+    {/* THREAD LIST */}
+    <div className="threadList">
+
+      {/* ✅ LOADING STATE */}
+      {isLoadingThreads && (
+        <p className="emptyThreads">Loading chats...</p>
+      )}
+
+      {/* ✅ PINNED */}
+      {!isLoadingThreads && pinned.length > 0 && (
+        <>
+          <p className="sectionLabel">
+            <Pin size={11} /> Pinned
+          </p>
+          <ul>
+            {pinned.map(t => (
+              <ThreadItem key={t.threadId} thread={t} />
+            ))}
+          </ul>
+        </>
+      )}
+
+      {/* ✅ RECENT */}
+      {!isLoadingThreads && recent.length > 0 && (
+        <>
+          <p className="sectionLabel">
+            <MessageSquare size={11} /> Recent
+          </p>
+          <ul>
+            {recent.map(t => (
+              <ThreadItem key={t.threadId} thread={t} />
+            ))}
+          </ul>
+        </>
+      )}
+
+      {/* ✅ EMPTY STATE */}
+      {!isLoadingThreads && filtered.length === 0 && (
+        <p className="emptyThreads">
+          {searchQuery ? "No chats found" : "No chats yet — start one!"}
+        </p>
+      )}
+    </div>
+
+    {/* FOOTER */}
+    <div className="sidebarFooter">
+      <div className={`onlineBadge ${isOnline ? "online" : "offline"}`}>
+        <span className="dot" /> {isOnline ? "Online" : "Offline"}
+      </div>
+
+      <button
+        className="iconBtn"
+        onClick={() => setIsDarkMode(!isDarkMode)}
+      >
+        {isDarkMode ? <Sun size={16} /> : <Moon size={16} />}
+      </button>
+
+      <p className="poweredBy">Powered by Groq ⚡</p>
+    </div>
+  </aside>
+
+);
 }
 
 export default Sidebar;
