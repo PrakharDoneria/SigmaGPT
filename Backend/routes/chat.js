@@ -262,4 +262,4 @@ router.delete("/threads", async (req, res) => {
   }
 });
 
-export default rou
+export default router;
