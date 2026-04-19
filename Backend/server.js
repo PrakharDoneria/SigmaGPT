@@ -14,12 +14,17 @@ if (
   throw new Error("❌ Missing Firebase environment variables");
 }
 
-const serviceAccount = {
-  projectId: process.env.FIREBASE_PROJECT_ID,
-  clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-  privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, "\n"),
-};
 
+
+
+const serviceAccount = {
+  type: "service_account",
+  project_id: process.env.FIREBASE_PROJECT_ID,
+  private_key_id: process.env.FIREBASE_PRIVATE_KEY_ID,
+  private_key: JSON.parse(process.env.FIREBASE_PRIVATE_KEY), // JSON.parse handles the \n correctly
+  client_email: process.env.FIREBASE_CLIENT_EMAIL,
+  // ...rest of fields
+};
 // ✅ Initialize Firebase Admin
 initializeApp({
   credential: cert(serviceAccount),
