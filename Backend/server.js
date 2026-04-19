@@ -3,19 +3,30 @@ import "dotenv/config";
 import cors from "cors";
 import { initializeApp, cert } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
-import { createRequire } from "module";
 import chatRoutes from "./routes/chat.js";
 
-// ✅ Load service account key
-const require = createRequire(import.meta.url);
-const serviceAccount = require("./serviceAccountKey.json");
+// ✅ Validate ENV early (fail fast)
+if (
+  !process.env.FIREBASE_PROJECT_ID ||
+  !process.env.FIREBASE_CLIENT_EMAIL ||
+  !process.env.FIREBASE_PRIVATE_KEY
+) {
+  throw new Error("❌ Missing Firebase environment variables");
+}
+
+// ✅ Firebase config using ENV (no JSON file)
+const serviceAccount = {
+  projectId: process.env.FIREBASE_PROJECT_ID,
+  clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+  privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, "\n"),
+};
 
 // ✅ Initialize Firebase Admin
 initializeApp({
   credential: cert(serviceAccount),
 });
 
-// ✅ Initialize Firestore and export it
+// ✅ Firestore
 export const db = getFirestore();
 
 const app = express();
@@ -23,8 +34,9 @@ const PORT = process.env.PORT || 8080;
 
 // ✅ Middlewares
 app.use(express.json());
+
 app.use(cors({
-  origin: process.env.FRONTEND_URL || "http://localhost:5173",
+  origin: process.env.FRONTEND_URL || "*",
   methods: ["GET", "POST", "DELETE", "PUT"],
   credentials: true,
 }));
@@ -32,11 +44,10 @@ app.use(cors({
 // ✅ Routes
 app.use("/api/chat", chatRoutes);
 
-// ✅ Health check — needed for Render deployment
+// ✅ Health check (Render uses this)
 app.get("/", (req, res) => {
   res.json({
     status: "✅ SigmaGPT Backend Running!",
-    database: "Firebase Firestore",
     timestamp: new Date().toISOString(),
   });
 });
@@ -55,5 +66,4 @@ app.use((err, req, res, next) => {
 // ✅ Start server
 app.listen(PORT, () => {
   console.log(`🚀 SigmaGPT Backend running on port ${PORT}`);
-  console.log(`🔥 Firebase Firestore connected!`);
 });
