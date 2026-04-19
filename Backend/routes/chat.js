@@ -1,264 +1,273 @@
+// routes/chat.js
 import express from "express";
-import { db } from "../server.js";
-import {
-  getChatResponse,
-  getChatResponseStream,
-  generateChatTitle,
-} from "../utils/groq.js";
+import { db } from "../server.js"; // Import Firestore
+import Groq from "groq-sdk";
 
 const router = express.Router();
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
-// ✅ Helper — format thread doc for frontend
-const formatThread = (doc) => ({
-  threadId: doc.id,
-  ...doc.data(),
-});
+// ═══════════════════════════════════════════════════════════
+// THREADS ROUTES
+// ═══════════════════════════════════════════════════════════
 
-// ✅ GET all threads — sorted by updatedAt descending
+// GET /api/chat/threads - Get all threads
 router.get("/threads", async (req, res) => {
   try {
-    const snapshot = await db
-      .collection("threads")
-      .orderBy("pinned", "desc")
-      .orderBy("updatedAt", "desc")
-      .get();
+    const threadsRef = db.collection("threads");
+    const snapshot = await threadsRef.orderBy("updatedAt", "desc").get();
 
-    const threads = snapshot.docs.map((doc) => ({
-      threadId: doc.id,
-      title: doc.data().title || "New Chat",
-      pinned: doc.data().pinned || false,
-      persona: doc.data().persona || "general",
-      model: doc.data().model || "smart",
-      messageCount: doc.data().messageCount || 0,
-      createdAt: doc.data().createdAt || null,
-      updatedAt: doc.data().updatedAt || null,
-    }));
+    const threads = [];
+    snapshot.forEach((doc) => {
+      threads.push({
+        threadId: doc.id,
+        ...doc.data(),
+      });
+    });
 
     res.json(threads);
-  } catch (err) {
-    console.error("❌ Failed to fetch threads:", err.message);
+  } catch (error) {
+    console.error("Error fetching threads:", error);
     res.status(500).json({ error: "Failed to fetch threads" });
   }
 });
 
-// ✅ GET single thread with all messages
+// GET /api/chat/threads/:threadId - Get single thread with messages
 router.get("/threads/:threadId", async (req, res) => {
-  const { threadId } = req.params;
-
   try {
-    const doc = await db.collection("threads").doc(threadId).get();
+    const { threadId } = req.params;
 
-    if (!doc.exists) {
+    const threadDoc = await db.collection("threads").doc(threadId).get();
+
+    if (!threadDoc.exists) {
       return res.status(404).json({ error: "Thread not found" });
     }
 
-    res.json({ threadId: doc.id, ...doc.data() });
-  } catch (err) {
-    console.error("❌ Failed to fetch thread:", err.message);
+    const messagesSnapshot = await db
+      .collection("threads")
+      .doc(threadId)
+      .collection("messages")
+      .orderBy("timestamp", "asc")
+      .get();
+
+    const messages = [];
+    messagesSnapshot.forEach((doc) => {
+      messages.push(doc.data());
+    });
+
+    res.json({
+      ...threadDoc.data(),
+      messages,
+    });
+  } catch (error) {
+    console.error("Error fetching thread:", error);
     res.status(500).json({ error: "Failed to fetch thread" });
   }
 });
 
-// ✅ POST — Send message (with streaming)
-router.post("/chat", async (req, res) => {
-  const { threadId, message, persona = "general", model = "smart" } = req.body;
-
-  if (!threadId || !message) {
-    return res.status(400).json({ error: "threadId and message are required" });
-  }
-
-  try {
-    const threadRef = db.collection("threads").doc(threadId);
-    const threadDoc = await threadRef.get();
-
-    const now = new Date().toISOString();
-    const userMessage = {
-      role: "user",
-      content: message,
-      timestamp: now,
-    };
-
-    let messages = [];
-
-    if (!threadDoc.exists) {
-      // ✅ Create new thread
-      const title = await generateChatTitle(message);
-      await threadRef.set({
-        title,
-        persona,
-        model,
-        pinned: false,
-        messages: [userMessage],
-        messageCount: 1,
-        createdAt: now,
-        updatedAt: now,
-      });
-      messages = [userMessage];
-    } else {
-      // ✅ Add to existing thread
-      messages = [...(threadDoc.data().messages || []), userMessage];
-      await threadRef.update({
-        messages,
-        updatedAt: now,
-      });
-    }
-
-    // Format messages for Groq
-    const formattedMessages = messages.map((m) => ({
-      role: m.role,
-      content: m.content,
-    }));
-
-    // ✅ Check if client wants streaming
-    const wantsStream = req.headers["accept"] === "text/event-stream";
-
-    if (wantsStream) {
-      // ✅ Streaming mode
-      res.setHeader("Content-Type", "text/event-stream");
-      res.setHeader("Cache-Control", "no-cache");
-      res.setHeader("Connection", "keep-alive");
-
-      let fullReply = "";
-
-      const result = await getChatResponseStream(
-        formattedMessages,
-        persona,
-        model,
-        (chunk) => {
-          fullReply += chunk;
-          res.write(`data: ${JSON.stringify({ chunk })}\n\n`);
-        }
-      );
-
-      // ✅ Save assistant reply to Firestore
-      const assistantMessage = {
-        role: "assistant",
-        content: result.content,
-        persona: result.persona,
-        model: result.model,
-        timestamp: new Date().toISOString(),
-      };
-
-      const updatedMessages = [...messages, assistantMessage];
-      await threadRef.update({
-        messages: updatedMessages,
-        messageCount: updatedMessages.length,
-        updatedAt: new Date().toISOString(),
-      });
-
-      res.write(`data: ${JSON.stringify({ done: true, threadId })}\n\n`);
-      res.end();
-
-    } else {
-      // ✅ Normal mode
-      const result = await getChatResponse(formattedMessages, persona, model);
-
-      const assistantMessage = {
-        role: "assistant",
-        content: result.content,
-        persona: result.persona,
-        model: result.model,
-        timestamp: new Date().toISOString(),
-      };
-
-      const updatedMessages = [...messages, assistantMessage];
-      await threadRef.update({
-        messages: updatedMessages,
-        messageCount: updatedMessages.length,
-        updatedAt: new Date().toISOString(),
-      });
-
-      res.json({
-        reply: result.content,
-        persona: result.persona,
-        model: result.model,
-        tokens: result.tokens,
-        threadId,
-      });
-    }
-
-  } catch (err) {
-    console.error("❌ Chat error:", err.message);
-    res.status(500).json({ error: "Failed to get AI response. Try again." });
-  }
-});
-
-// ✅ PUT — Rename a thread
-router.put("/threads/:threadId/rename", async (req, res) => {
-  const { threadId } = req.params;
-  const { title } = req.body;
-
-  if (!title) {
-    return res.status(400).json({ error: "Title is required" });
-  }
-
-  try {
-    await db.collection("threads").doc(threadId).update({
-      title: title.trim(),
-      updatedAt: new Date().toISOString(),
-    });
-
-    res.json({ success: true, title: title.trim() });
-  } catch (err) {
-    console.error("❌ Rename error:", err.message);
-    res.status(500).json({ error: "Failed to rename thread" });
-  }
-});
-
-// ✅ PUT — Pin/Unpin a thread
-router.put("/threads/:threadId/pin", async (req, res) => {
-  const { threadId } = req.params;
-
-  try {
-    const doc = await db.collection("threads").doc(threadId).get();
-
-    if (!doc.exists) {
-      return res.status(404).json({ error: "Thread not found" });
-    }
-
-    const newPinned = !doc.data().pinned;
-    await db.collection("threads").doc(threadId).update({
-      pinned: newPinned,
-      updatedAt: new Date().toISOString(),
-    });
-
-    res.json({ success: true, pinned: newPinned });
-  } catch (err) {
-    console.error("❌ Pin error:", err.message);
-    res.status(500).json({ error: "Failed to pin thread" });
-  }
-});
-
-// ✅ DELETE — Delete single thread
+// DELETE /api/chat/threads/:threadId - Delete a thread
 router.delete("/threads/:threadId", async (req, res) => {
-  const { threadId } = req.params;
-
   try {
-    const doc = await db.collection("threads").doc(threadId).get();
+    const { threadId } = req.params;
 
-    if (!doc.exists) {
-      return res.status(404).json({ error: "Thread not found" });
-    }
+    // Delete messages subcollection
+    const messagesRef = db
+      .collection("threads")
+      .doc(threadId)
+      .collection("messages");
+    const messagesSnapshot = await messagesRef.get();
 
-    await db.collection("threads").doc(threadId).delete();
-    res.json({ success: true, message: "Thread deleted successfully" });
-  } catch (err) {
-    console.error("❌ Delete error:", err.message);
+    const batch = db.batch();
+    messagesSnapshot.forEach((doc) => {
+      batch.delete(doc.ref);
+    });
+
+    // Delete thread document
+    batch.delete(db.collection("threads").doc(threadId));
+
+    await batch.commit();
+
+    res.json({ success: true, message: "Thread deleted" });
+  } catch (error) {
+    console.error("Error deleting thread:", error);
     res.status(500).json({ error: "Failed to delete thread" });
   }
 });
 
-// ✅ DELETE — Clear ALL threads
+// PUT /api/chat/threads/:threadId/pin - Toggle pin status
+router.put("/threads/:threadId/pin", async (req, res) => {
+  try {
+    const { threadId } = req.params;
+
+    const threadRef = db.collection("threads").doc(threadId);
+    const threadDoc = await threadRef.get();
+
+    if (!threadDoc.exists) {
+      return res.status(404).json({ error: "Thread not found" });
+    }
+
+    const currentPinned = threadDoc.data().pinned || false;
+    await threadRef.update({ pinned: !currentPinned });
+
+    res.json({ pinned: !currentPinned });
+  } catch (error) {
+    console.error("Error toggling pin:", error);
+    res.status(500).json({ error: "Failed to toggle pin" });
+  }
+});
+
+// PUT /api/chat/threads/:threadId/rename - Rename thread
+router.put("/threads/:threadId/rename", async (req, res) => {
+  try {
+    const { threadId } = req.params;
+    const { title } = req.body;
+
+    if (!title || !title.trim()) {
+      return res.status(400).json({ error: "Title is required" });
+    }
+
+    const threadRef = db.collection("threads").doc(threadId);
+    const threadDoc = await threadRef.get();
+
+    if (!threadDoc.exists) {
+      return res.status(404).json({ error: "Thread not found" });
+    }
+
+    await threadRef.update({ title: title.trim() });
+
+    res.json({ success: true, title: title.trim() });
+  } catch (error) {
+    console.error("Error renaming thread:", error);
+    res.status(500).json({ error: "Failed to rename thread" });
+  }
+});
+
+// DELETE /api/chat/threads - Clear all threads
 router.delete("/threads", async (req, res) => {
   try {
-    const snapshot = await db.collection("threads").get();
+    const threadsRef = db.collection("threads");
+    const snapshot = await threadsRef.get();
+
     const batch = db.batch();
-    snapshot.docs.forEach((doc) => batch.delete(doc.ref));
+    snapshot.forEach((doc) => {
+      batch.delete(doc.ref);
+    });
+
     await batch.commit();
+
     res.json({ success: true, message: "All threads cleared" });
-  } catch (err) {
-    console.error("❌ Clear error:", err.message);
+  } catch (error) {
+    console.error("Error clearing threads:", error);
     res.status(500).json({ error: "Failed to clear threads" });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════
+// CHAT ROUTE (with streaming)
+// ═══════════════════════════════════════════════════════════
+
+// POST /api/chat - Send message and get streaming response
+router.post("/", async (req, res) => {
+  try {
+    const { message, threadId, persona, model } = req.body;
+
+    if (!message || !message.trim()) {
+      return res.status(400).json({ error: "Message is required" });
+    }
+
+    // Set up SSE headers for streaming
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+
+    let currentThreadId = threadId;
+
+    // Create new thread if needed
+    if (!currentThreadId) {
+      const newThreadRef = db.collection("threads").doc();
+      currentThreadId = newThreadRef.id;
+
+      await newThreadRef.set({
+        title: message.slice(0, 50),
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        pinned: false,
+      });
+    }
+
+    // Save user message
+    const userMsgRef = db
+      .collection("threads")
+      .doc(currentThreadId)
+      .collection("messages")
+      .doc();
+
+    await userMsgRef.set({
+      role: "user",
+      content: message,
+      timestamp: new Date().toISOString(),
+    });
+
+    // Get conversation history
+    const messagesSnapshot = await db
+      .collection("threads")
+      .doc(currentThreadId)
+      .collection("messages")
+      .orderBy("timestamp", "asc")
+      .get();
+
+    const history = [];
+    messagesSnapshot.forEach((doc) => {
+      const data = doc.data();
+      history.push({
+        role: data.role,
+        content: data.content,
+      });
+    });
+
+    // Get Groq streaming response
+    const stream = await groq.chat.completions.create({
+      messages: history,
+      model: "llama-3.3-70b-versatile",
+      stream: true,
+    });
+
+    let fullResponse = "";
+
+    // Stream chunks to client
+    for await (const chunk of stream) {
+      const content = chunk.choices[0]?.delta?.content || "";
+      if (content) {
+        fullResponse += content;
+        res.write(`data: ${JSON.stringify({ chunk: content })}\n\n`);
+      }
+    }
+
+    // Save assistant response
+    const assistantMsgRef = db
+      .collection("threads")
+      .doc(currentThreadId)
+      .collection("messages")
+      .doc();
+
+    await assistantMsgRef.set({
+      role: "assistant",
+      content: fullResponse,
+      timestamp: new Date().toISOString(),
+      persona: persona || "general",
+    });
+
+    // Update thread timestamp
+    await db.collection("threads").doc(currentThreadId).update({
+      updatedAt: new Date().toISOString(),
+    });
+
+    // Send done signal
+    res.write(`data: ${JSON.stringify({ done: true, threadId: currentThreadId })}\n\n`);
+    res.end();
+  } catch (error) {
+    console.error("Chat error:", error);
+    res.write(`data: ${JSON.stringify({ error: error.message })}\n\n`);
+    res.end();
   }
 });
 
