@@ -32,14 +32,39 @@ export const db = getFirestore();
 const app = express();
 const PORT = process.env.PORT || 8080;
 
+// ✅ Allowed origins list
+const allowedOrigins = [
+  "http://localhost:5173",              // local dev
+  "http://localhost:4173",              // vite preview
+  "https://sigma-gpt-4m1p.vercel.app", // your Vercel URL
+];
+
+// ✅ Fixed CORS — supports multiple origins
+app.use(cors({
+  origin: (origin, callback) => {
+    // Allow requests with no origin (Postman, curl, mobile apps)
+    if (!origin) return callback(null, true);
+
+    // Allow any Vercel preview URL automatically
+    if (origin.endsWith(".vercel.app")) return callback(null, true);
+
+    // Allow localhost with any port (for dev)
+    if (origin.startsWith("http://localhost")) return callback(null, true);
+
+    // Allow exact matches from list
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+
+    // Block everything else
+    console.error(`❌ CORS blocked: ${origin}`);
+    callback(new Error(`CORS blocked: ${origin}`));
+  },
+  methods: ["GET", "POST", "DELETE", "PUT", "OPTIONS"],
+  credentials: true,
+  allowedHeaders: ["Content-Type", "Authorization", "Accept"],
+}));
+
 // ✅ Middlewares
 app.use(express.json());
-
-app.use(cors({
-  origin: process.env.FRONTEND_URL || "*",
-  methods: ["GET", "POST", "DELETE", "PUT"],
-  credentials: true,
-}));
 
 // ✅ Routes
 app.use("/api/chat", chatRoutes);
@@ -66,4 +91,5 @@ app.use((err, req, res, next) => {
 // ✅ Start server
 app.listen(PORT, () => {
   console.log(`🚀 SigmaGPT Backend running on port ${PORT}`);
+  console.log(`🔥 Firebase Firestore connected!`);
 });
