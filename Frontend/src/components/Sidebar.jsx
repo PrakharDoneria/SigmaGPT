@@ -72,7 +72,9 @@ function Sidebar() {
   const getAllThreads = async () => {
     setIsLoadingThreads(true);
     try {
-      const res = await fetch(THREADS_URL);
+      const res = await fetch(THREADS_URL, {
+        headers: { "x-user-id": "demo-user-123" }
+      });
       if (!res.ok) throw new Error(`Status: ${res.status}`);
       const data = await res.json();
       setAllThreads(Array.isArray(data) ? data : []);
@@ -97,7 +99,9 @@ function Sidebar() {
     setPrompt("");
     setReply(null);
     try {
-      const res = await fetch(THREAD_URL(threadId));
+      const res = await fetch(THREAD_URL(threadId), {
+        headers: { "x-user-id": "demo-user-123" }
+      });
       if (!res.ok) throw new Error(`Status: ${res.status}`);
       const data = await res.json();
       setPrevChats(data.messages || []);
@@ -111,7 +115,10 @@ function Sidebar() {
   const handleDelete = async (e, threadId) => {
     e.stopPropagation();
     try {
-      await fetch(THREAD_URL(threadId), { method: "DELETE" });
+      await fetch(THREAD_URL(threadId), { 
+        method: "DELETE",
+        headers: { "x-user-id": "demo-user-123" }
+      });
       setAllThreads(prev => prev.filter(t => t.threadId !== threadId));
       if (threadId === currThreadId) startNewChat();
       toast.success("Chat deleted!");
@@ -122,7 +129,10 @@ function Sidebar() {
   const handlePin = async (e, threadId) => {
     e.stopPropagation();
     try {
-      const res = await fetch(`${THREAD_URL(threadId)}/pin`, { method: "PUT" });
+      const res = await fetch(`${THREAD_URL(threadId)}/pin`, { 
+        method: "PUT",
+        headers: { "x-user-id": "demo-user-123" }
+      });
       const data = await res.json();
       setAllThreads(prev => prev.map(t =>
         t.threadId === threadId ? { ...t, pinned: data.pinned } : t
@@ -143,7 +153,10 @@ function Sidebar() {
     try {
       await fetch(`${THREAD_URL(threadId)}/rename`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "x-user-id": "demo-user-123" 
+        },
         body: JSON.stringify({ title: renameValue.trim() }),
       });
       setAllThreads(prev => prev.map(t =>

@@ -14,9 +14,10 @@ const router = express.Router();
 router.get("/threads", async (req, res) => {
   try {
     const snapshot = await db
-  .collection("threads")
-  .orderBy("updatedAt", "desc")
-  .get();
+      .collection("threads")
+      .where("userId", "==", req.user.uid) // Filter by user
+      .orderBy("updatedAt", "desc")
+      .get();
 
     const threads = [];
     snapshot.forEach((doc) => {
@@ -40,6 +41,10 @@ router.get("/threads/:threadId", async (req, res) => {
 
     if (!threadDoc.exists) {
       return res.status(404).json({ error: "Thread not found" });
+    }
+
+    if (threadDoc.data().userId !== req.user.uid) {
+      return res.status(403).json({ error: "Forbidden: You don't own this thread" });
     }
 
     // Get messages from subcollection
@@ -90,6 +95,7 @@ router.post("/chat", async (req, res) => {
         pinned: false,
         persona,
         model,
+        userId: req.user.uid, // Save user ID
       });
     } else {
       // Check if thread exists, create if not
@@ -103,6 +109,7 @@ router.post("/chat", async (req, res) => {
           pinned: false,
           persona,
           model,
+          userId: req.user.uid, // Save user ID
         });
       }
     }
@@ -192,6 +199,10 @@ router.put("/threads/:threadId/rename", async (req, res) => {
       return res.status(404).json({ error: "Thread not found" });
     }
 
+    if (threadDoc.data().userId !== req.user.uid) {
+      return res.status(403).json({ error: "Forbidden: You don't own this thread" });
+    }
+
     await threadRef.update({ title: title.trim() });
     res.json({ success: true, title: title.trim() });
 
@@ -214,6 +225,10 @@ router.put("/threads/:threadId/pin", async (req, res) => {
       return res.status(404).json({ error: "Thread not found" });
     }
 
+    if (threadDoc.data().userId !== req.user.uid) {
+      return res.status(403).json({ error: "Forbidden: You don't own this thread" });
+    }
+
     const newPinned = !threadDoc.data().pinned;
     await threadRef.update({ pinned: newPinned });
     res.json({ success: true, pinned: newPinned });
@@ -230,6 +245,11 @@ router.put("/threads/:threadId/pin", async (req, res) => {
 router.delete("/threads/:threadId", async (req, res) => {
   try {
     const { threadId } = req.params;
+    const threadRef = db.collection("threads").doc(threadId);
+    const threadDoc = await threadRef.get();
+
+    if (!threadDoc.exists) return res.status(404).json({ error: "Thread not found" });
+    if (threadDoc.data().userId !== req.user.uid) return res.status(403).json({ error: "Forbidden: You don't own this thread" });
 
     // Delete messages subcollection first
     const messagesRef = db.collection("threads").doc(threadId).collection("messages");
@@ -251,7 +271,9 @@ router.delete("/threads/:threadId", async (req, res) => {
 // ═══════════════════════════════════════
 router.delete("/threads", async (req, res) => {
   try {
-    const snapshot = await db.collection("threads").get();
+    const snapshot = await db.collection("threads")
+      .where("userId", "==", req.user.uid)
+      .get();
     const batch = db.batch();
     snapshot.forEach((doc) => batch.delete(doc.ref));
     await batch.commit();

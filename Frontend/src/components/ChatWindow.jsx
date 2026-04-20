@@ -74,6 +74,7 @@ function ChatWindow() {
         headers: {
           "Content-Type": "application/json",
           "Accept": "text/event-stream",
+          "x-user-id": "demo-user-123", // Simulated User ID
         },
         body: JSON.stringify({
           message: text,
@@ -245,7 +246,10 @@ function ChatWindow() {
     setShowMoreMenu(false);
     if (!window.confirm("Clear all chats? This cannot be undone.")) return;
     try {
-      await fetch(THREADS_URL, { method: "DELETE" });
+      await fetch(THREADS_URL, { 
+        method: "DELETE",
+        headers: { "x-user-id": "demo-user-123" }
+      });
       startNewChat();
       setAllThreads([]);
       toast.success("All chats cleared!");
