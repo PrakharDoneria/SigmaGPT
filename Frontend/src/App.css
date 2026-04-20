@@ -75,16 +75,49 @@ body {
 }
 
 /* ── App shell ── */
-.app {
+.app,
+.appShell {
   display: flex;
   height: 100vh;
   width: 100vw;
   overflow: hidden;
   transition: background 0.2s;
+  position: relative;
+  isolation: isolate;
+}
+
+.appShell::before,
+.appShell::after {
+  content: "";
+  position: absolute;
+  width: 360px;
+  height: 360px;
+  border-radius: 999px;
+  pointer-events: none;
+  filter: blur(64px);
+  z-index: -1;
+  opacity: 0.34;
+}
+
+.appShell::before {
+  top: -160px;
+  left: -140px;
+  background: radial-gradient(circle, rgba(63, 94, 251, 0.3), rgba(63, 94, 251, 0));
+}
+
+.appShell::after {
+  right: -120px;
+  bottom: -140px;
+  background: radial-gradient(circle, rgba(244, 114, 182, 0.26), rgba(244, 114, 182, 0));
+}
+
+.sidebarBackdrop {
+  display: none;
 }
 
 /* ── Offline banner ── */
-.offline-banner {
+.offline-banner,
+.offlineBanner {
   position: fixed;
   top: 0;
   left: 0;
@@ -126,4 +159,55 @@ input, textarea {
 /* ── Transitions ── */
 .app, .sidebar, .chatWindow {
   transition: background-color 0.2s ease;
+}
+
+.appShell .chatWindow {
+  min-width: 0;
+}
+
+.themeRipple {
+  position: fixed;
+  transform: translate(-50%, -50%) scale(0);
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 9998;
+  animation: theme-ripple 640ms ease-out forwards;
+}
+
+.themeRipple.light {
+  background: radial-gradient(circle at center, rgba(255, 255, 255, 0.96), rgba(255, 255, 255, 0.88));
+}
+
+.themeRipple.dark {
+  background: radial-gradient(circle at center, rgba(12, 16, 24, 0.95), rgba(18, 24, 34, 0.86));
+}
+
+@keyframes theme-ripple {
+  0% {
+    transform: translate(-50%, -50%) scale(0.02);
+    opacity: 0.9;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 0;
+  }
+}
+
+@media (max-width: 900px) {
+  .sidebarBackdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    border: none;
+    background: rgba(2, 6, 23, 0.5);
+    backdrop-filter: blur(2px);
+    z-index: 35;
+  }
+
+  .appShell::before,
+  .appShell::after {
+    width: 280px;
+    height: 280px;
+    opacity: 0.28;
+  }
 }
