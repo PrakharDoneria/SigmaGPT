@@ -1,48 +1,23 @@
 import express from "express";
-import { db } from "../server.js";
-import {
-  getChatResponse,
-  getChatResponseStream,
-  generateChatTitle,
-} from "../utils/groq.js"; // ✅ uses openai package — no groq-sdk needed!
+import { getChatResponse, generateChatTitle } from "../utils/groq.js";
 
 const router = express.Router();
 
-// ═══════════════════════════════════════
-// GET all threads
-// ═══════════════════════════════════════
-router.get("/threads", async (req, res) => {
+router.post("/respond", async (req, res) => {
   try {
+    const { messages, persona = "general", model = "smart" } = req.body ?? {};
     const snapshot = await db
       .collection("threads")
       .where("userId", "==", req.user.uid) // Filter by user
       .orderBy("updatedAt", "desc")
       .get();
 
-    const threads = [];
-    snapshot.forEach((doc) => {
-      threads.push({ threadId: doc.id, ...doc.data() });
-    });
-
-    res.json(threads);
-  } catch (error) {
-    console.error("❌ Failed to fetch threads:", error.message);
-    res.status(500).json({ error: "Failed to fetch threads" });
-  }
-});
-
-// ═══════════════════════════════════════
-// GET single thread with messages
-// ═══════════════════════════════════════
-router.get("/threads/:threadId", async (req, res) => {
-  try {
-    const { threadId } = req.params;
-    const threadDoc = await db.collection("threads").doc(threadId).get();
-
-    if (!threadDoc.exists) {
-      return res.status(404).json({ error: "Thread not found" });
+    if (!Array.isArray(messages) || messages.length === 0) {
+      return res.status(400).json({ error: "Messages are required" });
     }
 
+    const response = await getChatResponse(messages, persona, model);
+    res.json(response);
     if (threadDoc.data().userId !== req.user.uid) {
       return res.status(403).json({ error: "Forbidden: You don't own this thread" });
     }
@@ -60,22 +35,21 @@ router.get("/threads/:threadId", async (req, res) => {
 
     res.json({ threadId, ...threadDoc.data(), messages });
   } catch (error) {
-    console.error("❌ Failed to fetch thread:", error.message);
-    res.status(500).json({ error: "Failed to fetch thread" });
+    console.error("Chat response error:", error.message);
+    res.status(500).json({ error: "Failed to generate response" });
   }
 });
 
-// ═══════════════════════════════════════
-// POST — Send message (streaming)
-// ═══════════════════════════════════════
-router.post("/chat", async (req, res) => {
+router.post("/title", async (req, res) => {
   try {
-    const { message, threadId, persona = "general", model = "smart" } = req.body;
+    const { message } = req.body ?? {};
 
     if (!message?.trim()) {
       return res.status(400).json({ error: "Message is required" });
     }
 
+    const title = await generateChatTitle(message);
+    res.json({ title });
     // ✅ Streaming headers
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
@@ -279,8 +253,8 @@ router.delete("/threads", async (req, res) => {
     await batch.commit();
     res.json({ success: true, message: "All threads cleared" });
   } catch (error) {
-    console.error("❌ Clear error:", error.message);
-    res.status(500).json({ error: "Failed to clear threads" });
+    console.error("Title generation error:", error.message);
+    res.status(500).json({ error: "Failed to generate title" });
   }
 });
 

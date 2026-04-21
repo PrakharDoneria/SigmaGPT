@@ -18,46 +18,59 @@ export const MODELS = {
 export const PERSONAS = {
   general: {
     name: "SigmaGPT",
-    prompt: `You are SigmaGPT, a highly intelligent and helpful AI assistant. 
-             You are professional, friendly, and give clear concise answers.
-             Always format code in proper markdown code blocks.
-             Current date and time: ${new Date().toLocaleString()}`,
+    prompt: `You are SigmaGPT, a highly intelligent and helpful AI assistant.
+You are professional, friendly, and concise.
+Use markdown naturally, keep answers clear, and format code in fenced blocks.
+Current date and time: ${new Date().toLocaleString()}`,
   },
   coder: {
     name: "Sigma Coder",
     prompt: `You are Sigma Coder, an expert software engineer and coding assistant.
-             You specialize in writing clean, efficient, well-commented code.
-             Always provide code in proper markdown code blocks with language specified.
-             Explain your code clearly. Suggest best practices and optimizations.
-             Current date and time: ${new Date().toLocaleString()}`,
+You write clean, efficient code and explain tradeoffs clearly.
+Use proper markdown code blocks with language labels.
+Current date and time: ${new Date().toLocaleString()}`,
   },
   writer: {
     name: "Sigma Writer",
     prompt: `You are Sigma Writer, a professional content writer and editor.
-             You excel at essays, articles, emails, stories, and creative writing.
-             Your writing is engaging, clear, and well-structured.
-             Always ask about tone and audience if not specified.
-             Current date and time: ${new Date().toLocaleString()}`,
+You produce polished, structured prose for essays, emails, and drafts.
+Ask about tone and audience only when it affects the answer.
+Current date and time: ${new Date().toLocaleString()}`,
   },
   explainer: {
     name: "Sigma Simplified",
-    prompt: `You are Sigma Simplified, you explain everything in the simplest way possible.
-             Use analogies, examples, and simple language a 10 year old could understand.
-             Break down complex topics into easy digestible points.
-             Use emojis occasionally to make explanations fun and engaging.
-             Current date and time: ${new Date().toLocaleString()}`,
+    prompt: `You are Sigma Simplified.
+Explain things in plain language with helpful examples and short steps.
+Break down complex ideas without losing accuracy.
+Current date and time: ${new Date().toLocaleString()}`,
   },
   mentor: {
     name: "Sigma Mentor",
     prompt: `You are Sigma Mentor, a life coach and productivity expert.
-             You help with career advice, study tips, goal setting, and motivation.
-             You are encouraging, honest, and solution-focused.
-             Always end responses with an actionable next step.
-             Current date and time: ${new Date().toLocaleString()}`,
+You help with career advice, study tips, goal setting, and motivation.
+Be direct, constructive, and end with one actionable next step.
+Current date and time: ${new Date().toLocaleString()}`,
   },
 };
 
-// ✅ Normal response
+const cleanMessages = (messages = []) =>
+  messages
+    .filter((message) => message && typeof message.content === "string")
+    .map((message) => ({
+      role: message.role === "assistant" ? "assistant" : "user",
+      content: message.content,
+    }));
+
+const normalizeTitle = (title) => {
+  const cleaned = String(title ?? "")
+    .replace(/[`*_#>]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const words = cleaned.split(" ").filter(Boolean).slice(0, 4);
+  return words.join(" ").replace(/[.,!?;:]+$/g, "") || "New chat";
+};
+
 export const getChatResponse = async (messages, persona = "general", model = "smart") => {
   try {
     const selectedPersona = PERSONAS[persona] || PERSONAS.general;
@@ -70,7 +83,7 @@ export const getChatResponse = async (messages, persona = "general", model = "sm
 
     const response = await client.chat.completions.create({
       model: selectedModel,
-      messages: [systemMessage, ...messages],
+      messages: [systemMessage, ...cleanMessages(messages)],
       max_tokens: 2048,
       temperature: 0.7,
     });
@@ -88,56 +101,15 @@ export const getChatResponse = async (messages, persona = "general", model = "sm
   }
 };
 
-// ✅ Streaming response — text appears word by word like ChatGPT
-export const getChatResponseStream = async (messages, persona = "general", model = "smart", onChunk) => {
-  try {
-    const selectedPersona = PERSONAS[persona] || PERSONAS.general;
-    const selectedModel = MODELS[model] || MODELS.smart;
-
-    const systemMessage = {
-      role: "system",
-      content: selectedPersona.prompt,
-    };
-
-    const stream = await client.chat.completions.create({
-      model: selectedModel,
-      messages: [systemMessage, ...messages],
-      max_tokens: 2048,
-      temperature: 0.7,
-      stream: true, // 🔥 Enable streaming
-    });
-
-    let fullContent = "";
-
-    for await (const chunk of stream) {
-      const delta = chunk.choices[0]?.delta?.content || "";
-      if (delta) {
-        fullContent += delta;
-        onChunk(delta); // Send each word/chunk to frontend
-      }
-    }
-
-    return {
-      content: fullContent,
-      persona: selectedPersona.name,
-      model: selectedModel,
-    };
-
-  } catch (error) {
-    console.error("❌ Groq Stream Error:", error?.message || error);
-    throw new Error("Streaming failed. Please try again.");
-  }
-};
-
-// ✅ Generate a smart chat title from first message
 export const generateChatTitle = async (firstMessage) => {
   try {
-    const response = await client.chat.completions.create({
-      model: MODELS.fast, // Use fast model for title generation
+    const stream = await client.chat.completions.create({
+      model: MODELS.fast,
       messages: [
         {
           role: "system",
-          content: "Generate a short, catchy 4-6 word title for this chat. Return ONLY the title, nothing else.",
+          content:
+            "Generate a concise 3 to 4 word title for this chat. Return only the title and nothing else.",
         },
         {
           role: "user",
@@ -145,14 +117,14 @@ export const generateChatTitle = async (firstMessage) => {
         },
       ],
       max_tokens: 20,
-      temperature: 0.7,
+      temperature: 0.5,
     });
 
-    return response.choices[0].message.content.trim();
-
+    const rawTitle = stream.choices[0]?.message?.content || firstMessage;
+    return normalizeTitle(rawTitle);
   } catch (error) {
-    // Fallback title if generation fails
-    return firstMessage.slice(0, 30) + "...";
+    console.error("❌ Title generation error:", error?.message || error);
+    return normalizeTitle(firstMessage);
   }
 };
 
