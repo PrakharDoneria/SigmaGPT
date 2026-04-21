@@ -230,6 +230,61 @@ function ChatWindow() {
           replaceSessionChatMessages(chatId, nextMessages);
         } else {
           replaceChatMessages(chatId, nextMessages);
+      const response = await fetch(CHAT_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "text/event-stream",
+          "x-user-id": "demo-user-123", // Simulated User ID
+        },
+        body: JSON.stringify({
+          message: text,
+          threadId: currThreadId,
+          persona: selectedPersona,
+          model: selectedModel,
+        }),
+      });
+
+      if (!response.ok) throw new Error(`API Error: ${response.status}`);
+
+      // Read stream
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop();
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          try {
+            const data = JSON.parse(line.slice(6));
+
+            if (data.chunk) {
+              setPrevChats(prev => {
+                const updated = [...prev];
+                const last = updated[updated.length - 1];
+                updated[updated.length - 1] = { ...last, content: last.content + data.chunk };
+                return updated;
+              });
+            }
+
+            if (data.done) {
+              // Refresh thread list
+              try {
+                const res = await fetch(THREADS_URL);
+                if (res.ok) {
+                  const threads = await res.json();
+                  setAllThreads(Array.isArray(threads) ? threads : []);
+                }
+              } catch {}
+            }
+          } catch { /* skip malformed JSON */ }
         }
         setPrevChats(nextMessages);
       }
@@ -377,6 +432,15 @@ function ChatWindow() {
     if (!currThreadId) return;
     removeChat(currThreadId);
     toast.success("Chat deleted.");
+    try {
+      await fetch(THREADS_URL, { 
+        method: "DELETE",
+        headers: { "x-user-id": "demo-user-123" }
+      });
+      startNewChat();
+      setAllThreads([]);
+      toast.success("All chats cleared!");
+    } catch { toast.error("Failed to clear chats!"); }
   };
 
   const handleQuickPrompt = (text) => {

@@ -104,6 +104,25 @@ function Sidebar() {
   const [showModels, setShowModels] = useState(false);
   const renameInputRef = useRef(null);
 
+  // ✅ Fetch all threads
+  const getAllThreads = async () => {
+    setIsLoadingThreads(true);
+    try {
+      const res = await fetch(THREADS_URL, {
+        headers: { "x-user-id": "demo-user-123" }
+      });
+      if (!res.ok) throw new Error(`Status: ${res.status}`);
+      const data = await res.json();
+      setAllThreads(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error("Failed to fetch threads:", err.message);
+      setAllThreads([]);
+    }
+    setIsLoadingThreads(false);
+  };
+
+  useEffect(() => { getAllThreads(); }, [currThreadId]);
+
   useEffect(() => {
     if (renamingId && renameInputRef.current) {
       renameInputRef.current.focus();
@@ -141,6 +160,47 @@ function Sidebar() {
     togglePinned(threadId);
     syncThreads();
     toast.success("Chat updated.");
+    try {
+      const res = await fetch(THREAD_URL(threadId), {
+        headers: { "x-user-id": "demo-user-123" }
+      });
+      if (!res.ok) throw new Error(`Status: ${res.status}`);
+      const data = await res.json();
+      setPrevChats(data.messages || []);
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to load chat!");
+    }
+  };
+
+  // ✅ Delete thread
+  const handleDelete = async (e, threadId) => {
+    e.stopPropagation();
+    try {
+      await fetch(THREAD_URL(threadId), { 
+        method: "DELETE",
+        headers: { "x-user-id": "demo-user-123" }
+      });
+      setAllThreads(prev => prev.filter(t => t.threadId !== threadId));
+      if (threadId === currThreadId) startNewChat();
+      toast.success("Chat deleted!");
+    } catch { toast.error("Failed to delete!"); }
+  };
+
+  // ✅ Pin/Unpin thread
+  const handlePin = async (e, threadId) => {
+    e.stopPropagation();
+    try {
+      const res = await fetch(`${THREAD_URL(threadId)}/pin`, { 
+        method: "PUT",
+        headers: { "x-user-id": "demo-user-123" }
+      });
+      const data = await res.json();
+      setAllThreads(prev => prev.map(t =>
+        t.threadId === threadId ? { ...t, pinned: data.pinned } : t
+      ));
+      toast.success(data.pinned ? "📌 Chat pinned!" : "Chat unpinned!");
+    } catch { toast.error("Failed to pin!"); }
   };
 
   const startRename = (event, thread) => {
@@ -159,6 +219,22 @@ function Sidebar() {
     renameChat(threadId, nextTitle);
     updateCurrentChatTitle(threadId, nextTitle);
     syncThreads();
+  const handleRename = async (threadId) => {
+    if (!renameValue.trim()) { setRenamingId(null); return; }
+    try {
+      await fetch(`${THREAD_URL(threadId)}/rename`, {
+        method: "PUT",
+        headers: { 
+          "Content-Type": "application/json",
+          "x-user-id": "demo-user-123" 
+        },
+        body: JSON.stringify({ title: renameValue.trim() }),
+      });
+      setAllThreads(prev => prev.map(t =>
+        t.threadId === threadId ? { ...t, title: renameValue.trim() } : t
+      ));
+      toast.success("Chat renamed!");
+    } catch { toast.error("Failed to rename!"); }
     setRenamingId(null);
     toast.success("Chat renamed.");
   };

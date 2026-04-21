@@ -2,6 +2,7 @@ import express from "express";
 import "dotenv/config";
 import cors from "cors";
 import chatRoutes from "./routes/chat.js";
+import { authMiddleware } from "./middleware/auth.js";
 
 const app = express();
 const PORT = process.env.PORT || 8080;
@@ -41,6 +42,8 @@ app.use(express.json({ limit: "1mb" }));
 
 // Stateless AI routes used by the client-side chat manager.
 app.use("/api/chat", chatRoutes);
+// ✅ Routes
+app.use("/api/chat", authMiddleware, chatRoutes);
 
 app.get(["/", "/health"], (req, res) => {
   res.json({
