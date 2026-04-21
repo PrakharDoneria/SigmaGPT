@@ -104,6 +104,7 @@ import cors from "cors";
 import { initializeApp, cert } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import chatRoutes from "./routes/chat.js";
+import { authMiddleware } from "./middleware/auth.js";
 
 // ✅ Validate ENV early (fail fast)
 if (
@@ -167,7 +168,7 @@ app.use(cors({
 app.use(express.json());
 
 // ✅ Routes
-app.use("/api/chat", chatRoutes);
+app.use("/api/chat", authMiddleware, chatRoutes);
 
 // ✅ Health check (Render uses this)
 app.get("/", (req, res) => {
