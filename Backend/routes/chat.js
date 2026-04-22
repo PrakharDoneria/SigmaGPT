@@ -1,55 +1,88 @@
 import express from "express";
-import { getChatResponse, generateChatTitle } from "../utils/groq.js";
+import { db } from "../config/firebase.js"; 
+import {
+  getChatResponse,
+  //getChatResponseStream,
+  generateChatTitle,
+} from "../utils/groq.js";
 
 const router = express.Router();
 
-router.post("/respond", async (req, res) => {
+// ✅ All routes use req.user.uid (set by authMiddleware)
+
+// ═══════════════════════════════════════
+// GET /api/chat/threads — user's threads only
+// ═══════════════════════════════════════
+router.get("/threads", async (req, res) => {
   try {
-    const { messages, persona = "general", model = "smart" } = req.body ?? {};
+    const userId = req.user.uid;
+
     const snapshot = await db
       .collection("threads")
-      .where("userId", "==", req.user.uid) // Filter by user
+      .where("userId", "==", userId) // ✅ Only this user's threads!
       .orderBy("updatedAt", "desc")
       .get();
 
-    if (!Array.isArray(messages) || messages.length === 0) {
-      return res.status(400).json({ error: "Messages are required" });
+    const threads = [];
+    snapshot.forEach(doc => {
+      threads.push({ threadId: doc.id, ...doc.data() });
+    });
+
+    res.json(threads);
+  } catch (error) {
+    console.error("❌ Fetch threads error:", error.message);
+    res.status(500).json({ error: "Failed to fetch threads" });
+  }
+});
+
+// ═══════════════════════════════════════
+// GET /api/chat/threads/:threadId
+// ═══════════════════════════════════════
+router.get("/threads/:threadId", async (req, res) => {
+  try {
+    const { threadId } = req.params;
+    const userId = req.user.uid;
+
+    const threadDoc = await db.collection("threads").doc(threadId).get();
+
+    if (!threadDoc.exists) {
+      return res.status(404).json({ error: "Thread not found" });
     }
 
-    const response = await getChatResponse(messages, persona, model);
-    res.json(response);
-    if (threadDoc.data().userId !== req.user.uid) {
-      return res.status(403).json({ error: "Forbidden: You don't own this thread" });
+    // ✅ Make sure this thread belongs to this user!
+    if (threadDoc.data().userId !== userId) {
+      return res.status(403).json({ error: "Access denied" });
     }
 
-    // Get messages from subcollection
+    // Get messages subcollection
     const messagesSnapshot = await db
-      .collection("threads")
-      .doc(threadId)
+      .collection("threads").doc(threadId)
       .collection("messages")
       .orderBy("timestamp", "asc")
       .get();
 
     const messages = [];
-    messagesSnapshot.forEach((doc) => messages.push(doc.data()));
+    messagesSnapshot.forEach(doc => messages.push(doc.data()));
 
     res.json({ threadId, ...threadDoc.data(), messages });
   } catch (error) {
-    console.error("Chat response error:", error.message);
-    res.status(500).json({ error: "Failed to generate response" });
+    console.error("❌ Fetch thread error:", error.message);
+    res.status(500).json({ error: "Failed to fetch thread" });
   }
 });
 
-router.post("/title", async (req, res) => {
+// ═══════════════════════════════════════
+// POST /api/chat/chat — send message
+// ═══════════════════════════════════════
+router.post("/chat", async (req, res) => {
   try {
-    const { message } = req.body ?? {};
+    const { message, threadId, persona = "general", model = "smart" } = req.body;
+    const userId = req.user.uid;
 
     if (!message?.trim()) {
       return res.status(400).json({ error: "Message is required" });
     }
 
-    const title = await generateChatTitle(message);
-    res.json({ title });
     // ✅ Streaming headers
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
@@ -64,36 +97,36 @@ router.post("/title", async (req, res) => {
       const title = await generateChatTitle(message);
       await newThreadRef.set({
         title,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        pinned: false,
+        userId,   // ✅ Tag with user ID
         persona,
         model,
-        userId: req.user.uid, // Save user ID
+        pinned: false,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
       });
     } else {
-      // Check if thread exists, create if not
       const threadDoc = await db.collection("threads").doc(currentThreadId).get();
       if (!threadDoc.exists) {
         const title = await generateChatTitle(message);
         await db.collection("threads").doc(currentThreadId).set({
           title,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          pinned: false,
+          userId,   // ✅ Tag with user ID
           persona,
           model,
-          userId: req.user.uid, // Save user ID
+          pinned: false,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
         });
+      } else if (threadDoc.data().userId !== userId) {
+        // ✅ Security check — can't post to someone else's thread!
+        res.write(`data: ${JSON.stringify({ error: "Access denied" })}\n\n`);
+        return res.end();
       }
     }
 
     // ✅ Save user message
-    await db
-      .collection("threads")
-      .doc(currentThreadId)
-      .collection("messages")
-      .add({
+    await db.collection("threads").doc(currentThreadId)
+      .collection("messages").add({
         role: "user",
         content: message,
         timestamp: new Date().toISOString(),
@@ -101,37 +134,27 @@ router.post("/title", async (req, res) => {
 
     // ✅ Get conversation history
     const messagesSnapshot = await db
-      .collection("threads")
-      .doc(currentThreadId)
+      .collection("threads").doc(currentThreadId)
       .collection("messages")
       .orderBy("timestamp", "asc")
       .get();
 
     const history = [];
-    messagesSnapshot.forEach((doc) => {
+    messagesSnapshot.forEach(doc => {
       const data = doc.data();
       history.push({ role: data.role, content: data.content });
     });
 
-    // ✅ Stream response using groq.js (openai SDK)
-    let fullResponse = "";
+   const result = await getChatResponse(history, persona, model);
 
-    await getChatResponseStream(
-      history,
-      persona,
-      model,
-      (chunk) => {
-        fullResponse += chunk;
-        res.write(`data: ${JSON.stringify({ chunk })}\n\n`);
-      }
-    );
+const fullResponse = result.content;
+
+// send full response once
+res.write(`data: ${JSON.stringify({ chunk: fullResponse })}\n\n`);
 
     // ✅ Save assistant message
-    await db
-      .collection("threads")
-      .doc(currentThreadId)
-      .collection("messages")
-      .add({
+    await db.collection("threads").doc(currentThreadId)
+      .collection("messages").add({
         role: "assistant",
         content: fullResponse,
         timestamp: new Date().toISOString(),
@@ -143,7 +166,6 @@ router.post("/title", async (req, res) => {
       updatedAt: new Date().toISOString(),
     });
 
-    // ✅ Done signal
     res.write(`data: ${JSON.stringify({ done: true, threadId: currentThreadId })}\n\n`);
     res.end();
 
@@ -155,31 +177,50 @@ router.post("/title", async (req, res) => {
 });
 
 // ═══════════════════════════════════════
-// PUT — Rename thread
+// POST /api/chat/respond — non-streaming (for aiClient.js)
+// ═══════════════════════════════════════
+router.post("/respond", async (req, res) => {
+  try {
+    const { messages, persona = "general", model = "smart" } = req.body;
+    const result = await getChatResponse(messages, persona, model);
+    res.json({ content: result.content, model: result.model });
+  } catch (error) {
+    console.error("❌ Respond error:", error.message);
+    res.status(500).json({ error: "Failed to get AI response" });
+  }
+});
+
+// ═══════════════════════════════════════
+// POST /api/chat/title — generate title
+// ═══════════════════════════════════════
+router.post("/title", async (req, res) => {
+  try {
+    const { message } = req.body;
+    const title = await generateChatTitle(message);
+    res.json({ title });
+  } catch (error) {
+    res.json({ title: "New Chat" });
+  }
+});
+
+// ═══════════════════════════════════════
+// PUT /api/chat/threads/:threadId/rename
 // ═══════════════════════════════════════
 router.put("/threads/:threadId/rename", async (req, res) => {
   try {
     const { threadId } = req.params;
-    const { title } = req.body;
-
-    if (!title?.trim()) {
-      return res.status(400).json({ error: "Title is required" });
-    }
+    const { title }    = req.body;
+    const userId       = req.user.uid;
 
     const threadRef = db.collection("threads").doc(threadId);
     const threadDoc = await threadRef.get();
 
-    if (!threadDoc.exists) {
-      return res.status(404).json({ error: "Thread not found" });
-    }
+    if (!threadDoc.exists)                   return res.status(404).json({ error: "Thread not found" });
+    if (threadDoc.data().userId !== userId)  return res.status(403).json({ error: "Access denied" });
+    if (!title?.trim())                      return res.status(400).json({ error: "Title required" });
 
-    if (threadDoc.data().userId !== req.user.uid) {
-      return res.status(403).json({ error: "Forbidden: You don't own this thread" });
-    }
-
-    await threadRef.update({ title: title.trim() });
+    await threadRef.update({ title: title.trim(), updatedAt: new Date().toISOString() });
     res.json({ success: true, title: title.trim() });
-
   } catch (error) {
     console.error("❌ Rename error:", error.message);
     res.status(500).json({ error: "Failed to rename thread" });
@@ -187,26 +228,22 @@ router.put("/threads/:threadId/rename", async (req, res) => {
 });
 
 // ═══════════════════════════════════════
-// PUT — Pin/Unpin thread
+// PUT /api/chat/threads/:threadId/pin
 // ═══════════════════════════════════════
 router.put("/threads/:threadId/pin", async (req, res) => {
   try {
     const { threadId } = req.params;
+    const userId = req.user.uid;
+
     const threadRef = db.collection("threads").doc(threadId);
     const threadDoc = await threadRef.get();
 
-    if (!threadDoc.exists) {
-      return res.status(404).json({ error: "Thread not found" });
-    }
-
-    if (threadDoc.data().userId !== req.user.uid) {
-      return res.status(403).json({ error: "Forbidden: You don't own this thread" });
-    }
+    if (!threadDoc.exists)                  return res.status(404).json({ error: "Thread not found" });
+    if (threadDoc.data().userId !== userId) return res.status(403).json({ error: "Access denied" });
 
     const newPinned = !threadDoc.data().pinned;
-    await threadRef.update({ pinned: newPinned });
+    await threadRef.update({ pinned: newPinned, updatedAt: new Date().toISOString() });
     res.json({ success: true, pinned: newPinned });
-
   } catch (error) {
     console.error("❌ Pin error:", error.message);
     res.status(500).json({ error: "Failed to pin thread" });
@@ -214,23 +251,25 @@ router.put("/threads/:threadId/pin", async (req, res) => {
 });
 
 // ═══════════════════════════════════════
-// DELETE — Single thread
+// DELETE /api/chat/threads/:threadId
 // ═══════════════════════════════════════
 router.delete("/threads/:threadId", async (req, res) => {
   try {
     const { threadId } = req.params;
+    const userId = req.user.uid;
+
     const threadRef = db.collection("threads").doc(threadId);
     const threadDoc = await threadRef.get();
 
-    if (!threadDoc.exists) return res.status(404).json({ error: "Thread not found" });
-    if (threadDoc.data().userId !== req.user.uid) return res.status(403).json({ error: "Forbidden: You don't own this thread" });
+    if (!threadDoc.exists)                  return res.status(404).json({ error: "Thread not found" });
+    if (threadDoc.data().userId !== userId) return res.status(403).json({ error: "Access denied" });
 
     // Delete messages subcollection first
-    const messagesRef = db.collection("threads").doc(threadId).collection("messages");
+    const messagesRef = threadRef.collection("messages");
     const messagesSnapshot = await messagesRef.get();
     const batch = db.batch();
-    messagesSnapshot.forEach((doc) => batch.delete(doc.ref));
-    batch.delete(db.collection("threads").doc(threadId));
+    messagesSnapshot.forEach(doc => batch.delete(doc.ref));
+    batch.delete(threadRef);
     await batch.commit();
 
     res.json({ success: true, message: "Thread deleted" });
@@ -241,20 +280,25 @@ router.delete("/threads/:threadId", async (req, res) => {
 });
 
 // ═══════════════════════════════════════
-// DELETE — All threads
+// DELETE /api/chat/threads — clear ALL user's threads
 // ═══════════════════════════════════════
 router.delete("/threads", async (req, res) => {
   try {
+    const userId = req.user.uid;
+
+    // ✅ Only delete THIS user's threads!
     const snapshot = await db.collection("threads")
-      .where("userId", "==", req.user.uid)
+      .where("userId", "==", userId)
       .get();
+
     const batch = db.batch();
-    snapshot.forEach((doc) => batch.delete(doc.ref));
+    snapshot.forEach(doc => batch.delete(doc.ref));
     await batch.commit();
-    res.json({ success: true, message: "All threads cleared" });
+
+    res.json({ success: true, message: "All your threads cleared" });
   } catch (error) {
-    console.error("Title generation error:", error.message);
-    res.status(500).json({ error: "Failed to generate title" });
+    console.error("❌ Clear error:", error.message);
+    res.status(500).json({ error: "Failed to clear threads" });
   }
 });
 

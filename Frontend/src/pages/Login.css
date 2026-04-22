@@ -1,0 +1,218 @@
+/* ═══════════════════════════════════════
+   LOGIN PAGE
+═══════════════════════════════════════ */
+
+.loginPage {
+  min-height: 100vh;
+  width: 100vw;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-main);
+  padding: 20px;
+}
+
+.loginCard {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 40px 36px;
+  width: 100%;
+  max-width: 400px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+  box-shadow: 0 24px 64px var(--shadow);
+  animation: slideUp 0.3s ease;
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Logo ── */
+.loginLogo {
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+  margin-bottom: 8px;
+}
+
+.loginSigma {
+  font-size: 2.8rem;
+  font-weight: 900;
+  color: var(--accent);
+  line-height: 1;
+}
+
+.loginName {
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.02em;
+}
+
+.loginTagline {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  margin: 0 0 28px;
+  text-align: center;
+}
+
+/* ── Google button ── */
+.googleBtn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 12px 20px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  cursor: pointer;
+  color: var(--text-primary);
+  font-size: 0.9rem;
+  font-weight: 500;
+  transition: background 0.15s, border-color 0.15s, transform 0.1s;
+  margin-bottom: 20px;
+}
+
+.googleBtn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--accent);
+  transform: translateY(-1px);
+}
+
+.googleBtn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.googleBtn img {
+  width: 18px;
+  height: 18px;
+}
+
+/* ── Divider ── */
+.loginDivider {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.loginDivider::before,
+.loginDivider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+.loginDivider span {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+/* ── Form ── */
+.loginForm {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.loginInput {
+  width: 100%;
+  padding: 12px 16px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text-primary);
+  font-size: 0.88rem;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.loginInput:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-dim);
+}
+
+.loginInput::placeholder { color: var(--text-secondary); }
+.loginInput:disabled { opacity: 0.6; }
+
+/* ── Error ── */
+.loginError {
+  font-size: 0.8rem;
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin: 0;
+  text-align: center;
+}
+
+/* ── Submit button ── */
+.loginBtn {
+  width: 100%;
+  padding: 12px 20px;
+  background: var(--accent);
+  border: none;
+  border-radius: 12px;
+  color: #fff;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.1s;
+  margin-top: 4px;
+}
+
+.loginBtn:hover:not(:disabled) {
+  background: var(--accent-hover);
+  transform: translateY(-1px);
+}
+
+.loginBtn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+
+/* ── Toggle ── */
+.loginToggle {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  margin: 0 0 16px;
+  text-align: center;
+}
+
+.loginToggle button {
+  background: none;
+  border: none;
+  color: var(--accent-light);
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 600;
+  margin-left: 4px;
+  padding: 0;
+  text-decoration: underline;
+}
+
+.loginToggle button:hover { color: var(--accent); }
+
+/* ── Footer ── */
+.loginFooter {
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  opacity: 0.6;
+  margin: 0;
+  text-align: center;
+}
+
+/* ── Responsive ── */
+@media (max-width: 480px) {
+  .loginCard { padding: 32px 24px; }
+  .loginSigma { font-size: 2.2rem; }
+  .loginName  { font-size: 1.6rem; }
+}

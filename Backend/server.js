@@ -7,44 +7,46 @@ import { authMiddleware } from "./middleware/auth.js";
 const app = express();
 const PORT = process.env.PORT || 8080;
 
-// ✅ Allowed origins list
+// ✅ Allowed origins
 const allowedOrigins = [
-  "http://localhost:5173",              // local dev
-  "http://localhost:4173",              // vite preview
-  "https://sigma-gpt-4m1p.vercel.app", // your Vercel URL
+  "http://localhost:5173",
+  "http://localhost:4173",
+  "https://sigma-gpt-4m1p.vercel.app",
 ];
 
-// ✅ Fixed CORS — supports multiple origins
-app.use(cors({
+// ✅ CORS Configuration (FIXED)
+const corsOptions = {
   origin: (origin, callback) => {
-    // Allow requests with no origin (Postman, curl, mobile apps)
     if (!origin) return callback(null, true);
 
-    // Allow any Vercel preview URL automatically
     if (origin.endsWith(".vercel.app")) return callback(null, true);
-
-    // Allow localhost with any port (for dev)
     if (origin.startsWith("http://localhost")) return callback(null, true);
-
-    // Allow exact matches from list
     if (allowedOrigins.includes(origin)) return callback(null, true);
 
-    // Block everything else
     console.error(`❌ CORS blocked: ${origin}`);
     callback(new Error(`CORS blocked: ${origin}`));
   },
-  methods: ["GET", "POST", "DELETE", "PUT", "OPTIONS"],
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   credentials: true,
-  allowedHeaders: ["Content-Type", "Authorization", "Accept"],
-}));
+  allowedHeaders: [
+    "Content-Type",
+    "Authorization",
+    "Accept",
+    "x-user-id", // ✅ FIX: allow custom header
+  ],
+};
+
+// ✅ Apply CORS globally
+app.use(cors(corsOptions));
+
+
 
 app.use(express.json({ limit: "1mb" }));
 
-// Stateless AI routes used by the client-side chat manager.
-app.use("/api/chat", chatRoutes);
-// ✅ Routes
+// ✅ Protected Routes (NO DUPLICATION)
 app.use("/api/chat", authMiddleware, chatRoutes);
 
+// ✅ Health check
 app.get(["/", "/health"], (req, res) => {
   res.json({
     status: "SigmaGPT backend running",
@@ -59,12 +61,12 @@ app.use((req, res) => {
 
 // ✅ Global error handler
 app.use((err, req, res, next) => {
-  console.error("Server Error:", err.message);
+  console.error("❌ Server Error:", err.message);
   res.status(500).json({ error: "Internal server error" });
 });
 
 // ✅ Start server
 app.listen(PORT, () => {
-  console.log(`🚀 SigmaGPT Backend running on port ${PORT}`);
-  console.log("🧠 AI proxy ready");
+  console.log(`🚀 Server running on port ${PORT}`);
+  console.log("🧠 AI routes active at /api/chat");
 });
