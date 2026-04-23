@@ -84,7 +84,11 @@ app.use("/api/",             rateLimit(100, 60 * 1000)); // 100 req/min overall
 app.use("/api/chat", authMiddleware, chatRoutes);
 
 // ✅ Health check
-app.get(["/", "/health"], (req, res) => {
+app.get("/", (req, res) => {
+  res.json({ status: "✅ SigmaGPT backend running", timestamp: new Date().toISOString() });
+});
+
+app.get("/health", (req, res) => {
   res.json({ status: "✅ SigmaGPT backend running", timestamp: new Date().toISOString() });
 });
 
@@ -100,4 +104,4 @@ app.use((err, req, res, next) => {
 app.listen(PORT, () => {
   console.log(`🚀 SigmaGPT running on port ${PORT}`);
   console.log(`🔒 Rate limiting enabled`);
-});
+})
