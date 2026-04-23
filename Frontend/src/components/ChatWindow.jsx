@@ -6,14 +6,13 @@ import { ScaleLoader } from "react-spinners";
 import toast from "react-hot-toast";
 import {
   Send, Mic, MicOff, Download, FileText, FileDown,
-  MoreVertical, Trash2, RefreshCw, Menu
+  MoreVertical, Trash2, RefreshCw, Menu,
 } from "lucide-react";
 import { jsPDF } from "jspdf";
-import { getIdToken } from "../utils/firebase"; // ✅ FIX
+import { getIdToken } from "../utils/firebase.js";
 
-const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8080";
-
-const CHAT_URL = `${API_BASE}/api/chat/chat`;
+const API_BASE   = import.meta.env.VITE_API_URL || "http://localhost:8080";
+const CHAT_URL   = `${API_BASE}/api/chat/chat`;
 const THREADS_URL = `${API_BASE}/api/chat/threads`;
 
 function ChatWindow() {
@@ -29,52 +28,38 @@ function ChatWindow() {
     startNewChat,
     isSidebarOpen, setIsSidebarOpen,
     allThreads, setAllThreads,
+    currentChatTitle,
+    isLoadingConversation,
   } = useContext(MyContext);
 
   const [showExportMenu, setShowExportMenu] = useState(false);
-  const [showMoreMenu, setShowMoreMenu] = useState(false);
-
-  const chatBodyRef = useRef(null);
-  const inputRef = useRef(null);
+  const [showMoreMenu, setShowMoreMenu]     = useState(false);
+  const chatBodyRef    = useRef(null);
+  const inputRef       = useRef(null);
   const recognitionRef = useRef(null);
 
-  // ✅ Auto scroll
+  // ✅ Auto scroll to bottom
   useEffect(() => {
     if (chatBodyRef.current) {
       chatBodyRef.current.scrollTop = chatBodyRef.current.scrollHeight;
     }
-  }, [prevChats]);
+  }, [prevChats, isLoadingConversation]);
 
-  // ✅ MAIN CHAT FUNCTION (FULL FIXED)
+  // ✅ Send message with streaming
   const getReply = async (overridePrompt) => {
     const text = (overridePrompt || prompt).trim();
     if (!text || isLoading) return;
-
-    if (!isOnline) {
-      toast.error("You're offline!");
-      return;
-    }
+    if (!isOnline) { toast.error("You're offline!"); return; }
 
     setIsLoading(true);
     setIsNewChat(false);
     setPrompt("");
 
-    const userMsg = {
-      role: "user",
-      content: text,
-      timestamp: new Date().toISOString(),
-    };
-
-    // ✅ FIXED STATE UPDATE
+    // Add user + empty assistant placeholder
     setPrevChats(prev => [
       ...prev,
-      userMsg,
-      {
-        role: "assistant",
-        content: "",
-        timestamp: new Date().toISOString(),
-        persona: selectedPersona,
-      }
+      { role: "user", content: text, timestamp: new Date().toISOString() },
+      { role: "assistant", content: "", timestamp: new Date().toISOString(), persona: selectedPersona },
     ]);
 
     try {
@@ -85,7 +70,7 @@ function ChatWindow() {
         headers: {
           "Content-Type": "application/json",
           "Accept": "text/event-stream",
-          Authorization: `Bearer ${token}`, // ✅ CRITICAL FIX
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
           message: text,
@@ -95,13 +80,9 @@ function ChatWindow() {
         }),
       });
 
-      if (!response.ok) {
-        const errText = await response.text();
-        console.error("Chat API Error:", response.status, errText);
-        throw new Error(`API Error: ${response.status}`);
-      }
+      if (!response.ok) throw new Error(`API Error: ${response.status}`);
 
-      const reader = response.body.getReader();
+      const reader  = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
 
@@ -115,7 +96,6 @@ function ChatWindow() {
 
         for (const line of lines) {
           if (!line.startsWith("data: ")) continue;
-
           try {
             const data = JSON.parse(line.slice(6));
 
@@ -123,31 +103,20 @@ function ChatWindow() {
               setPrevChats(prev => {
                 const updated = [...prev];
                 const last = updated[updated.length - 1];
-                updated[updated.length - 1] = {
-                  ...last,
-                  content: last.content + data.chunk,
-                };
+                updated[updated.length - 1] = { ...last, content: last.content + data.chunk };
                 return updated;
               });
             }
 
             if (data.done) {
               try {
-                const token = await getIdToken();
-
-                const res = await fetch(THREADS_URL, {
-                  headers: {
-                    Authorization: `Bearer ${token}`,
-                  },
-                });
-
+                const t = await getIdToken();
+                const res = await fetch(THREADS_URL, { headers: { Authorization: `Bearer ${t}` } });
                 if (res.ok) {
                   const threads = await res.json();
                   setAllThreads(Array.isArray(threads) ? threads : []);
                 }
-              } catch (e) {
-                console.error("Thread refresh failed:", e);
-              }
+              } catch {}
             }
           } catch {}
         }
@@ -155,7 +124,7 @@ function ChatWindow() {
 
     } catch (err) {
       console.error("Chat error:", err);
-      toast.error("Failed to get response");
+      toast.error("Failed to get response. Try again!");
       setPrevChats(prev => prev.slice(0, -1));
     }
 
@@ -163,158 +132,234 @@ function ChatWindow() {
     inputRef.current?.focus();
   };
 
-  // ✅ VOICE INPUT (UNCHANGED)
+  // ✅ Voice input
   const toggleVoice = () => {
     if (!("SpeechRecognition" in window || "webkitSpeechRecognition" in window)) {
-      toast.error("Voice not supported");
+      toast.error("Voice not supported in this browser!");
       return;
     }
-
-    if (isListening) {
-      recognitionRef.current?.stop();
-      setIsListening(false);
-      return;
-    }
+    if (isListening) { recognitionRef.current?.stop(); setIsListening(false); return; }
 
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     const recognition = new SR();
     recognition.lang = "en-US";
+    recognition.interimResults = false;
 
     recognition.onresult = (e) => {
       setPrompt(e.results[0][0].transcript);
       setIsListening(false);
+      toast.success("Voice captured!");
     };
-
-    recognition.onerror = () => setIsListening(false);
-    recognition.onend = () => setIsListening(false);
+    recognition.onerror = () => { setIsListening(false); toast.error("Voice failed!"); };
+    recognition.onend   = () => setIsListening(false);
 
     recognitionRef.current = recognition;
     recognition.start();
     setIsListening(true);
   };
 
-  // ✅ EXPORT TXT
+  // ✅ Export TXT
   const exportTXT = () => {
-    if (!prevChats.length) return;
-
-    const text = prevChats.map(c => `${c.role}: ${c.content}`).join("\n\n");
-    const blob = new Blob([text], { type: "text/plain" });
-
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = "chat.txt";
-    a.click();
-  };
-
-  // ✅ EXPORT PDF
-  const exportPDF = () => {
-    const doc = new jsPDF();
-    let y = 20;
-
-    prevChats.forEach(chat => {
-      const lines = doc.splitTextToSize(chat.content, 170);
-      doc.text(lines, 20, y);
-      y += lines.length * 6;
+    if (!prevChats.length) { toast.error("No chat to export!"); return; }
+    const lines = prevChats.map(c => {
+      const who  = c.role === "user" ? "You" : "SigmaGPT";
+      const time = c.timestamp ? new Date(c.timestamp).toLocaleString() : "";
+      return `[${time}] ${who}:\n${c.content}\n`;
     });
-
-    doc.save("chat.pdf");
+    const text = `SigmaGPT Chat Export\nExported: ${new Date().toLocaleString()}\n${"─".repeat(40)}\n\n${lines.join("\n")}`;
+    const blob = new Blob([text], { type: "text/plain" });
+    const a    = document.createElement("a");
+    a.href     = URL.createObjectURL(blob);
+    a.download = `sigmagpt-${Date.now()}.txt`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+    toast.success("Exported as TXT!");
+    setShowExportMenu(false);
   };
 
-  // ✅ CLEAR CHAT FIXED
-  const clearChat = async () => {
-    if (!window.confirm("Clear all chats?")) return;
-
+  // ✅ Export PDF
+  const exportPDF = () => {
+    if (!prevChats.length) { toast.error("No chat to export!"); return; }
     try {
-      const token = await getIdToken();
+      const doc   = new jsPDF();
+      const pageW = doc.internal.pageSize.getWidth();
+      let y = 20;
 
-      await fetch(THREADS_URL, {
-        method: "DELETE",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+      doc.setFontSize(18); doc.setTextColor(124, 58, 237);
+      doc.text("ΣigmaGPT", 20, y); y += 8;
+
+      doc.setFontSize(9); doc.setTextColor(120, 120, 120);
+      doc.text(`Exported: ${new Date().toLocaleString()}`, 20, y); y += 10;
+
+      doc.setDrawColor(200, 200, 200);
+      doc.line(20, y, pageW - 20, y); y += 10;
+
+      prevChats.forEach(chat => {
+        const who  = chat.role === "user" ? "You" : "SigmaGPT";
+        const time = chat.timestamp
+          ? new Date(chat.timestamp).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })
+          : "";
+
+        doc.setFontSize(9); doc.setTextColor(124, 58, 237);
+        doc.text(`${who}  ${time}`, 20, y); y += 6;
+
+        doc.setFontSize(10); doc.setTextColor(30, 30, 30);
+        const clean = chat.content.replace(/[#*`_~]/g, "");
+        const lines = doc.splitTextToSize(clean, pageW - 40);
+        if (y + lines.length * 5 > 275) { doc.addPage(); y = 20; }
+        doc.text(lines, 20, y);
+        y += lines.length * 5 + 8;
       });
 
+      doc.setFontSize(8); doc.setTextColor(150, 150, 150);
+      doc.text("Powered by SigmaGPT + Groq", 20, 290);
+      doc.save(`sigmagpt-${Date.now()}.pdf`);
+      toast.success("Exported as PDF!");
+    } catch { toast.error("PDF export failed!"); }
+    setShowExportMenu(false);
+  };
+
+  // ✅ Clear all chats
+  const clearChat = async () => {
+    setShowMoreMenu(false);
+    if (!window.confirm("Clear all chats? This cannot be undone.")) return;
+    try {
+      const token = await getIdToken();
+      await fetch(THREADS_URL, { method: "DELETE", headers: { Authorization: `Bearer ${token}` } });
       startNewChat();
       setAllThreads([]);
-      toast.success("Chats cleared");
-    } catch {
-      toast.error("Failed to clear chats");
-    }
+      toast.success("All chats cleared!");
+    } catch { toast.error("Failed to clear chats!"); }
   };
+
+  const handleQuickPrompt = (text) => {
+    setPrompt(text);
+    inputRef.current?.focus();
+  };
+
+  const currentPersonaName = {
+    general: "SigmaGPT", coder: "Sigma Coder",
+    writer: "Sigma Writer", explainer: "Sigma Simplified", mentor: "Sigma Mentor",
+  }[selectedPersona] || "SigmaGPT";
+
+  const currentModelLabel = { smart: "Smart", fast: "Fast", balanced: "Balanced" }[selectedModel] || "Smart";
 
   return (
     <div className="chatWindow">
 
-      {/* NAVBAR */}
+      {/* ── Navbar ── */}
       <div className="navbar">
         <div className="navLeft">
           {!isSidebarOpen && (
-            <button onClick={() => setIsSidebarOpen(true)}>
+            <button className="navIconBtn" onClick={() => setIsSidebarOpen(true)} title="Open sidebar">
               <Menu size={18} />
             </button>
           )}
+          <div className="navTitle">
+            <span className="navName">{currentChatTitle || currentPersonaName}</span>
+            <span className="navModel">{currentModelLabel} · Groq</span>
+          </div>
         </div>
 
         <div className="navRight">
-          <button onClick={() => setShowExportMenu(!showExportMenu)}>
-            <Download />
-          </button>
+          {/* Export dropdown */}
+          <div className="navDropdownWrap">
+            <button className="navIconBtn" title="Export chat"
+              onClick={() => { setShowExportMenu(!showExportMenu); setShowMoreMenu(false); }}>
+              <Download size={17} />
+            </button>
+            {showExportMenu && (
+              <div className="navDropdown">
+                <button onClick={exportTXT}><FileText size={14} /> Export as TXT</button>
+                <button onClick={exportPDF}><FileDown size={14} /> Export as PDF</button>
+              </div>
+            )}
+          </div>
 
-          {showExportMenu && (
-            <div>
-              <button onClick={exportTXT}>TXT</button>
-              <button onClick={exportPDF}>PDF</button>
-            </div>
-          )}
-
-          <button onClick={() => setShowMoreMenu(!showMoreMenu)}>
-            <MoreVertical />
-          </button>
-
-          {showMoreMenu && (
-            <div>
-              <button onClick={startNewChat}>
-                <RefreshCw /> New
-              </button>
-              <button onClick={clearChat}>
-                <Trash2 /> Clear
-              </button>
-            </div>
-          )}
+          {/* More dropdown */}
+          <div className="navDropdownWrap">
+            <button className="navIconBtn" title="More options"
+              onClick={() => { setShowMoreMenu(!showMoreMenu); setShowExportMenu(false); }}>
+              <MoreVertical size={17} />
+            </button>
+            {showMoreMenu && (
+              <div className="navDropdown">
+                <button onClick={() => { startNewChat(); setShowMoreMenu(false); }}>
+                  <RefreshCw size={14} /> New Chat
+                </button>
+                <button className="danger" onClick={clearChat}>
+                  <Trash2 size={14} /> Clear All Chats
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* CHAT */}
-      <div className="chatBody" ref={chatBodyRef}>
-        <Chat />
+      {/* ── Chat body ── */}
+      <div className="chatBody" ref={chatBodyRef}
+        onClick={() => { setShowExportMenu(false); setShowMoreMenu(false); }}>
+        {isLoadingConversation ? (
+          <div className="chatSkeleton">
+            <div className="skeletonLine short" />
+            <div className="skeletonBubble" />
+            <div className="skeletonBubble right" />
+            <div className="skeletonBubble" />
+          </div>
+        ) : (
+          <Chat onQuickPrompt={handleQuickPrompt} />
+        )}
       </div>
 
-      {/* LOADING */}
-      {isLoading && <ScaleLoader />}
+      {/* ── Loading indicator ── */}
+      {isLoading && (
+        <div className="loadingBar">
+          <ScaleLoader color="var(--accent)" height={18} width={2} radius={2} margin={2} />
+          <span>SigmaGPT is thinking...</span>
+        </div>
+      )}
 
-      {/* INPUT */}
+      {/* ── Input area ── */}
       <div className="inputArea">
-        <button onClick={toggleVoice}>
-          {isListening ? <MicOff /> : <Mic />}
-        </button>
+        <div className="inputBox">
+          <button
+            className={`inputIconBtn ${isListening ? "listening" : ""}`}
+            onClick={toggleVoice}
+            title={isListening ? "Stop listening" : "Voice input"}
+          >
+            {isListening ? <MicOff size={18} /> : <Mic size={18} />}
+          </button>
 
-        <textarea
-          ref={inputRef}
-          value={prompt}
-          onChange={(e) => setPrompt(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              getReply();
-            }
-          }}
-        />
+          <textarea
+            ref={inputRef}
+            className="chatTextarea"
+            placeholder={isListening ? "🎙 Listening..." : "Ask SigmaGPT anything..."}
+            value={prompt}
+            rows={1}
+            onChange={e => {
+              setPrompt(e.target.value);
+              e.target.style.height = "auto";
+              e.target.style.height = Math.min(e.target.scrollHeight, 160) + "px";
+            }}
+            onKeyDown={e => {
+              if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); getReply(); }
+            }}
+          />
 
-        <button onClick={getReply}>
-          <Send />
-        </button>
+          <button
+            className={`sendBtn ${prompt.trim() && !isLoading ? "active" : ""}`}
+            onClick={() => getReply()}
+            disabled={!prompt.trim() || isLoading}
+            title="Send (Enter)"
+          >
+            <Send size={17} />
+          </button>
+        </div>
+
+        <p className="inputHint">
+          Press <kbd>Enter</kbd> to send · <kbd>Shift+Enter</kbd> for new line · SigmaGPT can make mistakes
+        </p>
       </div>
-
     </div>
   );
 }

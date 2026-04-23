@@ -1,13 +1,20 @@
 import { useState } from "react";
-import { signInWithGoogle, signInWithEmail, registerWithEmail } from "../utils/firebase.js";
+import {
+  signInWithGoogle,
+  signInWithEmail,
+  registerWithEmail,
+  resendVerificationEmail,
+} from "../utils/firebase.js";
 import "./Login.css";
 
 function Login() {
-  const [isRegister, setIsRegister] = useState(false);
-  const [email, setEmail]           = useState("");
-  const [password, setPassword]     = useState("");
-  const [error, setError]           = useState("");
-  const [loading, setLoading]       = useState(false);
+  const [isRegister, setIsRegister]         = useState(false);
+  const [email, setEmail]                   = useState("");
+  const [password, setPassword]             = useState("");
+  const [error, setError]                   = useState("");
+  const [loading, setLoading]               = useState(false);
+  const [verificationSent, setVerificationSent] = useState(false);
+  const [resending, setResending]           = useState(false);
 
   const handleGoogle = async () => {
     setError("");
@@ -31,22 +38,69 @@ function Login() {
     try {
       if (isRegister) {
         await registerWithEmail(email, password);
+        setVerificationSent(true); // ✅ Show verification message
       } else {
         await signInWithEmail(email, password);
       }
     } catch (err) {
       const messages = {
-        "auth/user-not-found":     "No account found with this email.",
-        "auth/wrong-password":     "Incorrect password.",
-        "auth/email-already-in-use": "Email already in use.",
-        "auth/invalid-email":      "Invalid email address.",
-        "auth/too-many-requests":  "Too many attempts. Try again later.",
-        "auth/invalid-credential": "Invalid email or password.",
+        "auth/user-not-found":      "No account found with this email.",
+        "auth/wrong-password":      "Incorrect password.",
+        "auth/email-already-in-use":"Email already in use.",
+        "auth/invalid-email":       "Invalid email address.",
+        "auth/too-many-requests":   "Too many attempts. Try again later.",
+        "auth/invalid-credential":  "Invalid email or password.",
+        "auth/email-not-verified":  "Please verify your email before signing in. Check your inbox!",
       };
       setError(messages[err.code] || "Authentication failed. Try again.");
     }
     setLoading(false);
   };
+
+  const handleResend = async () => {
+    if (!email || !password) { setError("Enter your email and password to resend."); return; }
+    setResending(true);
+    try {
+      await resendVerificationEmail(email, password);
+      toast && toast.success("Verification email sent!");
+      setError("");
+    } catch {
+      setError("Failed to resend. Try again.");
+    }
+    setResending(false);
+  };
+
+  // ✅ Verification sent screen
+  if (verificationSent) {
+    return (
+      <div className="loginPage">
+        <div className="loginCard">
+          <div className="verifyIcon">📧</div>
+          <h2 className="verifyTitle">Check your email!</h2>
+          <p className="verifyText">
+            We sent a verification link to <strong>{email}</strong>.
+            Click the link in the email to activate your account.
+          </p>
+          <p className="verifyNote">
+            After verifying, come back and sign in.
+          </p>
+          <button
+            className="loginBtn"
+            onClick={() => { setVerificationSent(false); setIsRegister(false); }}
+          >
+            Back to Sign In
+          </button>
+          <button
+            className="resendBtn"
+            onClick={handleResend}
+            disabled={resending}
+          >
+            {resending ? "Sending..." : "Resend verification email"}
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="loginPage">
@@ -65,9 +119,7 @@ function Login() {
           Continue with Google
         </button>
 
-        <div className="loginDivider">
-          <span>or</span>
-        </div>
+        <div className="loginDivider"><span>or</span></div>
 
         {/* Email form */}
         <form onSubmit={handleEmailAuth} className="loginForm">
@@ -88,7 +140,22 @@ function Login() {
             disabled={loading}
           />
 
-          {error && <p className="loginError">{error}</p>}
+          {error && (
+            <div className="loginErrorBox">
+              <p className="loginError">{error}</p>
+              {/* Show resend button if email not verified */}
+              {error.includes("verify") && (
+                <button
+                  type="button"
+                  className="resendBtn"
+                  onClick={handleResend}
+                  disabled={resending}
+                >
+                  {resending ? "Sending..." : "Resend verification email"}
+                </button>
+              )}
+            </div>
+          )}
 
           <button type="submit" className="loginBtn" disabled={loading}>
             {loading ? "Please wait..." : isRegister ? "Create Account" : "Sign In"}

@@ -1,5 +1,5 @@
 import "./Sidebar.css";
-import { useContext, useEffect, useRef, useState } from "react";
+import { useContext, useEffect, useRef, useState, useCallback } from "react";
 import { MyContext } from "../context/MyContext.jsx";
 import toast from "react-hot-toast";
 import { getIdToken, logOut } from "../utils/firebase.js";
@@ -10,7 +10,7 @@ import {
   MessageSquare, LogOut,
 } from "lucide-react";
 
-const API_URL    = import.meta.env.VITE_API_URL;
+const API_URL     = import.meta.env.VITE_API_URL;
 const THREADS_URL = `${API_URL}/api/chat/threads`;
 const THREAD_URL  = (id) => `${API_URL}/api/chat/threads/${id}`;
 
@@ -30,10 +30,10 @@ const MODELS = [
 
 function formatThreadDate(dateStr) {
   if (!dateStr) return "";
-  const date     = new Date(dateStr);
-  const now      = new Date();
-  const diffMs   = now - date;
-  const diffMins = Math.floor(diffMs / 60000);
+  const date      = new Date(dateStr);
+  const now       = new Date();
+  const diffMs    = now - date;
+  const diffMins  = Math.floor(diffMs / 60000);
   const diffHours = Math.floor(diffMins / 60);
   const diffDays  = Math.floor(diffHours / 24);
   if (diffMins < 1)   return "Just now";
@@ -44,10 +44,68 @@ function formatThreadDate(dateStr) {
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
+// ✅ ThreadItem is OUTSIDE Sidebar — prevents remount on re-render (fixes rename bug!)
+function ThreadItem({
+  thread, currThreadId,
+  renamingId, renameValue, renameInputRef,
+  setRenameValue, setRenamingId,
+  onThreadClick, onDelete, onPin, onStartRename, onRename,
+}) {
+  const isRenaming = renamingId === thread.threadId;
+  const isActive   = thread.threadId === currThreadId;
+
+  return (
+    <li
+      className={`threadItem ${isActive ? "active" : ""}`}
+      onClick={() => { if (!isRenaming) onThreadClick(thread.threadId); }}
+    >
+      {isRenaming ? (
+        <div className="renameBox" onClick={e => e.stopPropagation()}>
+          <input
+            ref={renameInputRef}
+            value={renameValue}
+            onClick={e => e.stopPropagation()}
+            onChange={e => setRenameValue(e.target.value)}
+            onKeyDown={e => {
+              e.stopPropagation();
+              if (e.key === "Enter")  onRename(thread.threadId);
+              if (e.key === "Escape") setRenamingId(null);
+            }}
+          />
+          <button onClick={e => { e.stopPropagation(); onRename(thread.threadId); }}>
+            <Check size={13} />
+          </button>
+          <button onClick={e => { e.stopPropagation(); setRenamingId(null); }}>
+            <X size={13} />
+          </button>
+        </div>
+      ) : (
+        <div className="threadContent">
+          <div className="threadInfo">
+            <span className="threadTitle">{thread.title || "New Chat"}</span>
+            <span className="threadDate">{formatThreadDate(thread.updatedAt)}</span>
+          </div>
+          <div className="threadActions">
+            <button title={thread.pinned ? "Unpin" : "Pin"} onClick={e => onPin(e, thread.threadId)}>
+              {thread.pinned ? <PinOff size={13} /> : <Pin size={13} />}
+            </button>
+            <button title="Rename" onClick={e => onStartRename(e, thread)}>
+              <Pencil size={13} />
+            </button>
+            <button title="Delete" className="danger" onClick={e => onDelete(e, thread.threadId)}>
+              <Trash2 size={13} />
+            </button>
+          </div>
+        </div>
+      )}
+    </li>
+  );
+}
+
 function Sidebar() {
   const {
-    allThreads, setAllThreads,
     currThreadId, setCurrThreadId,
+    updateCurrentChatTitle,
     setIsNewChat, setPrompt, setReply,
     isDarkMode, setIsDarkMode,
     isSidebarOpen, setIsSidebarOpen,
@@ -58,6 +116,9 @@ function Sidebar() {
     currentUser, isMobile,
   } = useContext(MyContext);
 
+  // ✅ KEY FIX — Sidebar owns its OWN threads state (not from context!)
+  // Context's setAllThreads = syncThreads() which reads localStorage — useless for Firestore!
+  const [threads, setThreads]           = useState([]);
   const [renamingId, setRenamingId]     = useState(null);
   const [renameValue, setRenameValue]   = useState("");
   const [showPersonas, setShowPersonas] = useState(false);
@@ -65,30 +126,39 @@ function Sidebar() {
   const [isLoading, setIsLoading]       = useState(false);
   const renameInputRef = useRef(null);
 
-  // ✅ Fetch threads with auth token
-  const getAllThreads = async () => {
+  // ✅ Fetch threads from Firestore
+  const fetchThreads = useCallback(async () => {
     setIsLoading(true);
     try {
       const token = await getIdToken();
-      const res   = await fetch(THREADS_URL, {
+      if (!token) { setThreads([]); setIsLoading(false); return; }
+
+      const res = await fetch(THREADS_URL, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (!res.ok) throw new Error();
+
+      if (!res.ok) throw new Error(`Status: ${res.status}`);
       const data = await res.json();
-      setAllThreads(Array.isArray(data) ? data : []);
+      setThreads(Array.isArray(data) ? data : []);
     } catch (err) {
-      console.error("Fetch error:", err);
-      setAllThreads([]);
+      console.error("Fetch threads error:", err);
+      setThreads([]);
     }
     setIsLoading(false);
-  };
+  }, []);
 
-  useEffect(() => { getAllThreads(); }, [currThreadId]);
+  // ✅ Fetch on mount + whenever currThreadId changes (new chat was created)
+  useEffect(() => { fetchThreads(); }, [currThreadId, fetchThreads]);
 
+  // ✅ Focus rename input
   useEffect(() => {
-    if (renamingId && renameInputRef.current) renameInputRef.current.focus();
+    if (renamingId && renameInputRef.current) {
+      renameInputRef.current.focus();
+      renameInputRef.current.select();
+    }
   }, [renamingId]);
 
+  // ✅ Click thread
   const handleThreadClick = (threadId) => {
     if (threadId === currThreadId) return;
     setCurrThreadId(threadId);
@@ -98,122 +168,132 @@ function Sidebar() {
     if (isMobile) setIsSidebarOpen(false);
   };
 
-  // ✅ DELETE with auth
+  // ✅ Delete — update LOCAL state immediately + refetch
   const handleDelete = async (e, threadId) => {
     e.stopPropagation();
+    e.preventDefault();
+    // Optimistic update
+    setThreads(prev => prev.filter(t => t.threadId !== threadId));
+    if (threadId === currThreadId) startNewChat();
+
     try {
       const token = await getIdToken();
-      await fetch(THREAD_URL(threadId), {
+      const res = await fetch(THREAD_URL(threadId), {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
       });
-      setAllThreads(prev => prev.filter(t => t.threadId !== threadId));
-      if (threadId === currThreadId) startNewChat();
+      if (!res.ok) throw new Error();
       toast.success("Chat deleted!");
-    } catch { toast.error("Delete failed"); }
+    } catch {
+      toast.error("Delete failed!");
+      fetchThreads(); // Rollback by refetching
+    }
   };
 
-  // ✅ PIN with auth
+  // ✅ Pin — update LOCAL state immediately + refetch
   const handlePin = async (e, threadId) => {
     e.stopPropagation();
+    e.preventDefault();
+
+    // Optimistic update
+    const thread = threads.find(t => t.threadId === threadId);
+    const newPinned = !thread?.pinned;
+    setThreads(prev =>
+      prev.map(t => t.threadId === threadId ? { ...t, pinned: newPinned } : t)
+    );
+
     try {
       const token = await getIdToken();
       const res   = await fetch(`${THREAD_URL(threadId)}/pin`, {
         method: "PUT",
         headers: { Authorization: `Bearer ${token}` },
       });
+      if (!res.ok) throw new Error();
       const data = await res.json();
-      setAllThreads(prev =>
+      // Confirm with server value
+      setThreads(prev =>
         prev.map(t => t.threadId === threadId ? { ...t, pinned: data.pinned } : t)
       );
       toast.success(data.pinned ? "📌 Pinned!" : "Unpinned!");
-    } catch { toast.error("Pin failed"); }
+    } catch {
+      toast.error("Pin failed!");
+      fetchThreads(); // Rollback
+    }
   };
 
-  // ✅ RENAME with auth
+  // ✅ Start rename
+  const handleStartRename = (e, thread) => {
+    e.stopPropagation();
+    e.preventDefault();
+    setRenamingId(thread.threadId);
+    setRenameValue(thread.title || "");
+  };
+
+  // ✅ Submit rename — update LOCAL state immediately
   const handleRename = async (threadId) => {
-    if (!renameValue.trim()) { setRenamingId(null); return; }
+    const newTitle = renameValue.trim();
+    if (!newTitle) { setRenamingId(null); return; }
+
+    // Optimistic update
+    setThreads(prev =>
+      prev.map(t => t.threadId === threadId ? { ...t, title: newTitle } : t)
+    );
+    setRenamingId(null);
+
+    // Also update navbar title if this is current chat
+    if (threadId === currThreadId && updateCurrentChatTitle) {
+      updateCurrentChatTitle(threadId, newTitle);
+    }
+
     try {
       const token = await getIdToken();
-      await fetch(`${THREAD_URL(threadId)}/rename`, {
+      const res = await fetch(`${THREAD_URL(threadId)}/rename`, {
         method: "PUT",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ title: renameValue.trim() }),
+        body: JSON.stringify({ title: newTitle }),
       });
-      setAllThreads(prev =>
-        prev.map(t => t.threadId === threadId ? { ...t, title: renameValue.trim() } : t)
-      );
+      if (!res.ok) throw new Error();
       toast.success("Renamed!");
-    } catch { toast.error("Rename failed"); }
-    setRenamingId(null);
+    } catch {
+      toast.error("Rename failed!");
+      fetchThreads(); // Rollback
+    }
   };
 
   // ✅ Sign out
   const handleSignOut = async () => {
     try { await logOut(); toast.success("Signed out!"); }
-    catch { toast.error("Sign out failed"); }
+    catch { toast.error("Sign out failed!"); }
   };
 
-  // ✅ Filter + split pinned/recent
-  const filtered = Array.isArray(allThreads)
-    ? allThreads.filter(t => t.title?.toLowerCase().includes(searchQuery.toLowerCase()))
-    : [];
+  // ✅ Filter + split
+  const filtered = threads.filter(t =>
+    t.title?.toLowerCase().includes(searchQuery.toLowerCase())
+  );
   const pinned = filtered.filter(t => t.pinned);
   const recent = filtered.filter(t => !t.pinned);
 
   const currentPersona = PERSONAS.find(p => p.id === selectedPersona) || PERSONAS[0];
   const currentModel   = MODELS.find(m => m.id === selectedModel) || MODELS[0];
 
-  // ✅ Thread item
-  const ThreadItem = ({ thread }) => (
-    <li
-      className={`threadItem ${thread.threadId === currThreadId ? "active" : ""}`}
-      onClick={() => handleThreadClick(thread.threadId)}
-    >
-      {renamingId === thread.threadId ? (
-        <div className="renameBox" onClick={e => e.stopPropagation()}>
-          <input
-            ref={renameInputRef}
-            value={renameValue}
-            onChange={e => setRenameValue(e.target.value)}
-            onKeyDown={e => {
-              if (e.key === "Enter")  handleRename(thread.threadId);
-              if (e.key === "Escape") setRenamingId(null);
-            }}
-          />
-          <button onClick={() => handleRename(thread.threadId)}><Check size={13} /></button>
-          <button onClick={() => setRenamingId(null)}><X size={13} /></button>
-        </div>
-      ) : (
-        <div className="threadContent">
-          <div className="threadInfo">
-            <span className="threadTitle">{thread.title || "New Chat"}</span>
-            <span className="threadDate">{formatThreadDate(thread.updatedAt)}</span>
-          </div>
-          <div className="threadActions">
-            <button title={thread.pinned ? "Unpin" : "Pin"} onClick={e => handlePin(e, thread.threadId)}>
-              {thread.pinned ? <PinOff size={13} /> : <Pin size={13} />}
-            </button>
-            <button title="Rename" onClick={e => { e.stopPropagation(); setRenamingId(thread.threadId); setRenameValue(thread.title || ""); }}>
-              <Pencil size={13} />
-            </button>
-            <button title="Delete" className="danger" onClick={e => handleDelete(e, thread.threadId)}>
-              <Trash2 size={13} />
-            </button>
-          </div>
-        </div>
-      )}
-    </li>
-  );
+  const threadItemProps = {
+    currThreadId, renamingId, renameValue,
+    renameInputRef, setRenameValue, setRenamingId,
+    onThreadClick: handleThreadClick,
+    onDelete:      handleDelete,
+    onPin:         handlePin,
+    onStartRename: handleStartRename,
+    onRename:      handleRename,
+  };
 
-  // ✅ Collapsed sidebar
+  // ✅ Collapsed
   if (!isSidebarOpen) {
     return (
       <aside className="sidebar collapsed">
-        <button className="collapseBtn" onClick={() => setIsSidebarOpen(true)} title="Open sidebar">
+        <button className="collapseBtn" onClick={() => setIsSidebarOpen(true)}>
           <ChevronRight size={18} />
         </button>
-        <button className="newChatIconBtn" onClick={startNewChat} title="New Chat">
+        <button className="newChatIconBtn" onClick={startNewChat}>
           <Plus size={18} />
         </button>
       </aside>
@@ -222,6 +302,7 @@ function Sidebar() {
 
   return (
     <aside className="sidebar">
+
       {/* ── Header ── */}
       <div className="sidebarHeader">
         <div className="logoArea">
@@ -248,7 +329,9 @@ function Sidebar() {
           onChange={e => setSearchQuery(e.target.value)}
         />
         {searchQuery && (
-          <button className="iconBtn" onClick={() => setSearchQuery("")}><X size={13} /></button>
+          <button className="iconBtn" onClick={() => setSearchQuery("")}>
+            <X size={13} />
+          </button>
         )}
       </div>
 
@@ -259,14 +342,14 @@ function Sidebar() {
         {!isLoading && pinned.length > 0 && (
           <>
             <p className="sectionLabel"><Pin size={11} /> Pinned</p>
-            <ul>{pinned.map(t => <ThreadItem key={t.threadId} thread={t} />)}</ul>
+            <ul>{pinned.map(t => <ThreadItem key={t.threadId} thread={t} {...threadItemProps} />)}</ul>
           </>
         )}
 
         {!isLoading && recent.length > 0 && (
           <>
             <p className="sectionLabel"><MessageSquare size={11} /> Recent</p>
-            <ul>{recent.map(t => <ThreadItem key={t.threadId} thread={t} />)}</ul>
+            <ul>{recent.map(t => <ThreadItem key={t.threadId} thread={t} {...threadItemProps} />)}</ul>
           </>
         )}
 
@@ -279,6 +362,7 @@ function Sidebar() {
 
       {/* ── Footer ── */}
       <div className="sidebarFooter">
+
         {/* Persona selector */}
         <div className="selectorRow">
           <button className="selectorBtn"
@@ -311,7 +395,7 @@ function Sidebar() {
               {MODELS.map(m => (
                 <button key={m.id}
                   className={`selectorItem ${selectedModel === m.id ? "selected" : ""}`}
-                  onClick={() => { setSelectedModel(m.id); setShowModels(false); toast.success(`Switched to ${m.name} model!`); }}>
+                  onClick={() => { setSelectedModel(m.id); setShowModels(false); toast.success(`Switched to ${m.name}!`); }}>
                   {m.icon} <span>{m.name}</span> <small>{m.desc}</small>
                 </button>
               ))}
@@ -319,23 +403,28 @@ function Sidebar() {
           )}
         </div>
 
-        {/* User info + controls */}
-<div className="footerBottom">
-  <div className={`onlineBadge ${isOnline ? "online" : "offline"}`}>
-    <span className="dot" />
-    {isOnline ? "Online" : "Offline"}
-  </div>
-  <div className="footerControls">
-    <button className="iconBtn" title="Toggle theme" 
-      onClick={() => setIsDarkMode(!isDarkMode)}>
-      {isDarkMode ? <Sun size={16} /> : <Moon size={16} />}
-    </button>
-    <button className="iconBtn danger" title="Sign out" onClick={handleSignOut}>
-      <LogOut size={16} />
-    </button>
-  </div>
-</div>
-<p className="poweredBy">Powered by Groq ⚡</p>
+        {/* Bottom row */}
+        <div className="footerBottom">
+          <div className={`onlineBadge ${isOnline ? "online" : "offline"}`}>
+            <span className="dot" />
+            {isOnline ? "Online" : "Offline"}
+          </div>
+          <div className="footerControls">
+            <button className="iconBtn" title="Toggle theme"
+              onClick={() => setIsDarkMode(!isDarkMode)}>
+              {isDarkMode ? <Sun size={16} /> : <Moon size={16} />}
+            </button>
+            <button className="iconBtn danger" title="Sign out" onClick={handleSignOut}>
+              <LogOut size={16} />
+            </button>
+          </div>
+        </div>
+
+        {currentUser && (
+          <p className="userEmail">{currentUser.displayName || currentUser.email}</p>
+        )}
+
+        <p className="poweredBy">Powered by Groq ⚡</p>
       </div>
     </aside>
   );
