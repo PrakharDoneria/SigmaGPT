@@ -1,11 +1,12 @@
 import { useState } from "react";
+import "./Login.css";
 import {
   signInWithGoogle,
   signInWithEmail,
   registerWithEmail,
   resendVerificationEmail,
 } from "../utils/firebase.js";
-import "./Login.css";
+
 
 function Login() {
   const [isRegister, setIsRegister]         = useState(false);

@@ -148,8 +148,18 @@ function Sidebar() {
   }, []);
 
   // ✅ Fetch on mount + whenever currThreadId changes (new chat was created)
-  useEffect(() => { fetchThreads(); }, [currThreadId, fetchThreads]);
-
+ useEffect(() => { fetchThreads(); }, []);
+// ✅ ADD THIS SEPARATELY — refetch when new chat created
+const prevThreadIdRef = useRef(currThreadId);
+useEffect(() => {
+  // Only refetch if a genuinely NEW thread was created
+  if (prevThreadIdRef.current !== currThreadId) {
+    prevThreadIdRef.current = currThreadId;
+    // Small delay to let Firestore propagate
+    const timer = setTimeout(() => fetchThreads(), 800);
+    return () => clearTimeout(timer);
+  }
+}, [currThreadId]);
   // ✅ Focus rename input
   useEffect(() => {
     if (renamingId && renameInputRef.current) {
@@ -168,58 +178,60 @@ function Sidebar() {
     if (isMobile) setIsSidebarOpen(false);
   };
 
-  // ✅ Delete — update LOCAL state immediately + refetch
-  const handleDelete = async (e, threadId) => {
-    e.stopPropagation();
-    e.preventDefault();
-    // Optimistic update
-    setThreads(prev => prev.filter(t => t.threadId !== threadId));
+const handleDelete = async (e, threadId) => {
+  e.stopPropagation();
+  e.preventDefault();
+  
+  // Optimistic update first
+  setThreads(prev => prev.filter(t => t.threadId !== threadId));
+
+  try {
+    const token = await getIdToken();
+    const res = await fetch(THREAD_URL(threadId), {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error();
+    toast.success("Chat deleted!");
     if (threadId === currThreadId) startNewChat();
+  } catch {
+    toast.error("Delete failed!");
+    fetchThreads(); // only rollback on error
+  }
+};
 
-    try {
-      const token = await getIdToken();
-      const res = await fetch(THREAD_URL(threadId), {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) throw new Error();
-      toast.success("Chat deleted!");
-    } catch {
-      toast.error("Delete failed!");
-      fetchThreads(); // Rollback by refetching
-    }
-  };
-
-  // ✅ Pin — update LOCAL state immediately + refetch
   const handlePin = async (e, threadId) => {
-    e.stopPropagation();
-    e.preventDefault();
+  e.stopPropagation();
+  e.preventDefault();
 
-    // Optimistic update
-    const thread = threads.find(t => t.threadId === threadId);
-    const newPinned = !thread?.pinned;
+  const thread = threads.find(t => t.threadId === threadId);
+  const newPinned = !thread?.pinned;
+
+  // Optimistic update
+  setThreads(prev =>
+    prev.map(t => t.threadId === threadId ? { ...t, pinned: newPinned } : t)
+  );
+
+  try {
+    const token = await getIdToken();
+    const res = await fetch(`${THREAD_URL(threadId)}/pin`, {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error();
+    const data = await res.json();
     setThreads(prev =>
-      prev.map(t => t.threadId === threadId ? { ...t, pinned: newPinned } : t)
+      prev.map(t => t.threadId === threadId ? { ...t, pinned: data.pinned } : t)
     );
-
-    try {
-      const token = await getIdToken();
-      const res   = await fetch(`${THREAD_URL(threadId)}/pin`, {
-        method: "PUT",
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) throw new Error();
-      const data = await res.json();
-      // Confirm with server value
-      setThreads(prev =>
-        prev.map(t => t.threadId === threadId ? { ...t, pinned: data.pinned } : t)
-      );
-      toast.success(data.pinned ? "📌 Pinned!" : "Unpinned!");
-    } catch {
-      toast.error("Pin failed!");
-      fetchThreads(); // Rollback
-    }
-  };
+    toast.success(data.pinned ? "📌 Pinned!" : "Unpinned!");
+  } catch {
+    toast.error("Pin failed!");
+    // ✅ Revert — don't refetch!
+    setThreads(prev =>
+      prev.map(t => t.threadId === threadId ? { ...t, pinned: !newPinned } : t)
+    );
+  }
+};
 
   // ✅ Start rename
   const handleStartRename = (e, thread) => {
@@ -229,36 +241,38 @@ function Sidebar() {
     setRenameValue(thread.title || "");
   };
 
-  // ✅ Submit rename — update LOCAL state immediately
   const handleRename = async (threadId) => {
-    const newTitle = renameValue.trim();
-    if (!newTitle) { setRenamingId(null); return; }
+  const newTitle = renameValue.trim();
+  const oldTitle = threads.find(t => t.threadId === threadId)?.title || "";
+  if (!newTitle) { setRenamingId(null); return; }
 
-    // Optimistic update
+  // Optimistic update
+  setThreads(prev =>
+    prev.map(t => t.threadId === threadId ? { ...t, title: newTitle } : t)
+  );
+  setRenamingId(null);
+
+  if (threadId === currThreadId && updateCurrentChatTitle) {
+    updateCurrentChatTitle(threadId, newTitle);
+  }
+
+  try {
+    const token = await getIdToken();
+    const res = await fetch(`${THREAD_URL(threadId)}/rename`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ title: newTitle }),
+    });
+    if (!res.ok) throw new Error();
+    toast.success("Renamed!");
+  } catch {
+    toast.error("Rename failed!");
+    // ✅ Revert — don't refetch!
     setThreads(prev =>
-      prev.map(t => t.threadId === threadId ? { ...t, title: newTitle } : t)
+      prev.map(t => t.threadId === threadId ? { ...t, title: oldTitle } : t)
     );
-    setRenamingId(null);
-
-    // Also update navbar title if this is current chat
-    if (threadId === currThreadId && updateCurrentChatTitle) {
-      updateCurrentChatTitle(threadId, newTitle);
-    }
-
-    try {
-      const token = await getIdToken();
-      const res = await fetch(`${THREAD_URL(threadId)}/rename`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ title: newTitle }),
-      });
-      if (!res.ok) throw new Error();
-      toast.success("Renamed!");
-    } catch {
-      toast.error("Rename failed!");
-      fetchThreads(); // Rollback
-    }
-  };
+  }
+};
 
   // ✅ Sign out
   const handleSignOut = async () => {

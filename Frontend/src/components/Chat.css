@@ -1,7 +1,13 @@
 /* ═══════════════════════════════════════
    CHAT MESSAGES
 ═══════════════════════════════════════ */
-
+/* Add this to Chat.css */
+.mdParagraph {
+  margin: 0 0 10px;
+}
+.mdParagraph:last-child {
+  margin-bottom: 0;
+}
 .chatMessages {
   max-width: 760px;
   width: 100%;

@@ -5,10 +5,9 @@ import ReactMarkdown from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
 import remarkGfm from "remark-gfm";
 import "highlight.js/styles/github-dark.css";
-import { Copy, Check, Volume2, VolumeX, User, Bot, Zap, Code2, PenLine, Lightbulb, GraduationCap } from "lucide-react";
+import { Copy, Check, Volume2, VolumeX, User, Bot, Code2, PenLine, Lightbulb, GraduationCap } from "lucide-react";
 import toast from "react-hot-toast";
 
-/* ── Persona icons ── */
 const PERSONA_ICONS = {
   general:   <Bot size={16} />,
   coder:     <Code2 size={16} />,
@@ -17,22 +16,21 @@ const PERSONA_ICONS = {
   mentor:    <GraduationCap size={16} />,
 };
 
-/* ── Format timestamp ── */
 function formatTime(timestamp) {
   if (!timestamp) return "";
-  const date = new Date(timestamp);
-  const now = new Date();
-  const isToday = date.toDateString() === now.toDateString();
+  const date      = new Date(timestamp);
+  const now       = new Date();
+  const isToday   = date.toDateString() === now.toDateString();
   const yesterday = new Date(now);
   yesterday.setDate(yesterday.getDate() - 1);
   const isYesterday = date.toDateString() === yesterday.toDateString();
   const time = date.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
-  if (isToday) return time;
+  if (isToday)     return time;
   if (isYesterday) return `Yesterday ${time}`;
   return `${date.toLocaleDateString("en-US", { month: "short", day: "numeric" })} · ${time}`;
 }
 
-/* ── Code block with copy button ── */
+/* ── Code block ── */
 function CodeBlock({ children, className }) {
   const [copied, setCopied] = useState(false);
   const code = String(children).replace(/\n$/, "");
@@ -56,6 +54,22 @@ function CodeBlock({ children, className }) {
   );
 }
 
+/* ── ✅ Custom markdown components — fixes div-in-p error ── */
+const markdownComponents = {
+  // ✅ KEY FIX: Replace <p> with <div> so CodeBlock (a div) can nest inside
+  p({ children }) {
+    return <div className="mdParagraph">{children}</div>;
+  },
+  code({ node, inline, className, children, ...props }) {
+    if (inline) return <code className="inlineCode" {...props}>{children}</code>;
+    return <CodeBlock className={className}>{children}</CodeBlock>;
+  },
+  // ✅ Ensure these render correctly too
+  pre({ children }) {
+    return <>{children}</>;
+  },
+};
+
 /* ── Single message ── */
 function Message({ chat, isStreaming }) {
   const [copied, setCopied] = useState(false);
@@ -72,11 +86,11 @@ function Message({ chat, isStreaming }) {
   const handleSpeak = () => {
     if (!window.speechSynthesis) { toast.error("Voice not supported!"); return; }
     if (speaking) { window.speechSynthesis.cancel(); setSpeaking(false); return; }
-    const clean = chat.content.replace(/[#*`_~\[\]]/g, "").replace(/\n+/g, " ");
+    const clean = chat.content.replace(/[#*`_~[\]]/g, "").replace(/\n+/g, " ");
     const utterance = new SpeechSynthesisUtterance(clean);
     utterance.rate = 1;
     utterance.onstart = () => setSpeaking(true);
-    utterance.onend = () => setSpeaking(false);
+    utterance.onend   = () => setSpeaking(false);
     utterance.onerror = () => setSpeaking(false);
     window.speechSynthesis.speak(utterance);
   };
@@ -97,12 +111,7 @@ function Message({ chat, isStreaming }) {
             <ReactMarkdown
               remarkPlugins={[remarkGfm]}
               rehypePlugins={[rehypeHighlight]}
-              components={{
-                code({ node, inline, className, children, ...props }) {
-                  if (inline) return <code className="inlineCode" {...props}>{children}</code>;
-                  return <CodeBlock className={className}>{children}</CodeBlock>;
-                },
-              }}
+              components={markdownComponents}
             >
               {chat.content}
             </ReactMarkdown>
@@ -110,7 +119,6 @@ function Message({ chat, isStreaming }) {
           </div>
         )}
 
-        {/* Message footer */}
         <div className="messageFooter">
           <span className="msgTime">{formatTime(chat.timestamp)}</span>
           {!isStreaming && (
@@ -137,19 +145,18 @@ function Message({ chat, isStreaming }) {
   );
 }
 
-/* ── Quick prompt cards ── */
+/* ── Quick prompts ── */
 const QUICK_PROMPTS = [
-  { icon: <Code2 size={18} />, title: "Write code", desc: "Write a Python function that..." },
+  { icon: <Code2 size={18} />,     title: "Write code",     desc: "Write a Python function that..." },
   { icon: <Lightbulb size={18} />, title: "Explain simply", desc: "Explain quantum computing simply" },
-  { icon: <PenLine size={18} />, title: "Write for me", desc: "Help me draft an email to..." },
-  { icon: <Bot size={18} />, title: "Solve a problem", desc: "How do I debug this error..." },
+  { icon: <PenLine size={18} />,   title: "Write for me",   desc: "Help me draft an email to..." },
+  { icon: <Bot size={18} />,       title: "Solve a problem",desc: "How do I debug this error..." },
 ];
 
 /* ── Main Chat component ── */
 function Chat({ onQuickPrompt }) {
   const { isNewChat, prevChats, isLoading } = useContext(MyContext);
 
-  /* Empty state */
   if (isNewChat && prevChats.length === 0) {
     return (
       <div className="emptyState">
@@ -160,7 +167,7 @@ function Chat({ onQuickPrompt }) {
         <p className="emptyTagline">Your intelligent AI assistant — fast, free, powerful.</p>
         <div className="quickPrompts">
           {QUICK_PROMPTS.map((q, i) => (
-            <button key={i} className="quickCard" onClick={() => onQuickPrompt && onQuickPrompt(q.desc)}>
+            <button key={i} className="quickCard" onClick={() => onQuickPrompt?.(q.desc)}>
               <span className="quickIcon">{q.icon}</span>
               <span className="quickTitle">{q.title}</span>
               <span className="quickDesc">{q.desc}</span>
@@ -174,7 +181,7 @@ function Chat({ onQuickPrompt }) {
   return (
     <div className="chatMessages">
       {prevChats.map((chat, idx) => {
-        const isLast = idx === prevChats.length - 1;
+        const isLast      = idx === prevChats.length - 1;
         const isStreaming = isLast && chat.role === "assistant" && isLoading;
         return <Message key={idx} chat={chat} isStreaming={isStreaming} />;
       })}
