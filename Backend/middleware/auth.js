@@ -11,7 +11,15 @@ export const authMiddleware = async (req, res, next) => {
 
     const idToken = authHeader.split("Bearer ")[1];
     const decodedToken = await getAuth().verifyIdToken(idToken);
+// ✅ Add after verifyIdToken
+const allowedDomains = process.env.ALLOWED_EMAIL_DOMAINS; // e.g. "gmail.com"
 
+if (allowedDomains && allowedDomains !== "*") {
+  const emailDomain = decodedToken.email?.split("@")[1];
+  if (!allowedDomains.split(",").includes(emailDomain)) {
+    return res.status(403).json({ error: "Access restricted" });
+  }
+}
     // ✅ Attach user info to request
     req.user = {
       uid:   decodedToken.uid,
