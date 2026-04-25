@@ -1,4 +1,227 @@
-/* Add these to your existing Login.css */
+/* ═══════════════════════════════════════
+   LOGIN PAGE — Self-contained styles
+   (no dependency on App.css variables)
+═══════════════════════════════════════ */
+
+.loginPage {
+  min-height: 100vh;
+  width: 100vw;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #212121;
+  padding: 20px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  box-sizing: border-box;
+}
+
+.loginCard {
+  background: #2a2a2a;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 20px;
+  padding: 40px 36px;
+  width: 100%;
+  max-width: 400px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.4);
+  animation: slideUp 0.3s ease;
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Logo ── */
+.loginLogo {
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+  margin-bottom: 8px;
+}
+
+.loginSigma {
+  font-size: 2.8rem;
+  font-weight: 900;
+  color: #7c3aed;
+  line-height: 1;
+}
+
+.loginName {
+  font-size: 2rem;
+  font-weight: 700;
+  color: #ececec;
+  letter-spacing: -0.02em;
+}
+
+.loginTagline {
+  font-size: 0.85rem;
+  color: #888888;
+  margin: 0 0 28px;
+  text-align: center;
+}
+
+/* ── Google button ── */
+.googleBtn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 12px 20px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  cursor: pointer;
+  color: #ececec;
+  font-size: 0.9rem;
+  font-weight: 500;
+  transition: background 0.15s, border-color 0.15s, transform 0.1s;
+  margin-bottom: 20px;
+}
+
+.googleBtn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: #7c3aed;
+  transform: translateY(-1px);
+}
+
+.googleBtn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.googleBtn img {
+  width: 18px;
+  height: 18px;
+}
+
+/* ── Divider ── */
+.loginDivider {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.loginDivider::before,
+.loginDivider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.loginDivider span {
+  font-size: 0.75rem;
+  color: #888888;
+  white-space: nowrap;
+}
+
+/* ── Form ── */
+.loginForm {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.loginInput {
+  width: 100%;
+  padding: 12px 16px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 10px;
+  color: #ececec;
+  font-size: 0.88rem;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  box-sizing: border-box;
+  font-family: inherit;
+}
+
+.loginInput:focus {
+  border-color: #7c3aed;
+  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.12);
+}
+
+.loginInput::placeholder { color: #888888; }
+.loginInput:disabled { opacity: 0.6; }
+
+/* ── Error ── */
+.loginErrorBox {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.loginError {
+  font-size: 0.8rem;
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin: 0;
+  text-align: center;
+}
+
+/* ── Submit button ── */
+.loginBtn {
+  width: 100%;
+  padding: 12px 20px;
+  background: #7c3aed;
+  border: none;
+  border-radius: 12px;
+  color: #fff;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.1s;
+  margin-top: 4px;
+  font-family: inherit;
+}
+
+.loginBtn:hover:not(:disabled) {
+  background: #6d28d9;
+  transform: translateY(-1px);
+}
+
+.loginBtn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+
+/* ── Toggle ── */
+.loginToggle {
+  font-size: 0.82rem;
+  color: #888888;
+  margin: 0 0 16px;
+  text-align: center;
+}
+
+.loginToggle button {
+  background: none;
+  border: none;
+  color: #a78bfa;
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 600;
+  margin-left: 4px;
+  padding: 0;
+  text-decoration: underline;
+  font-family: inherit;
+}
+
+.loginToggle button:hover { color: #7c3aed; }
+
+/* ── Footer ── */
+.loginFooter {
+  font-size: 0.72rem;
+  color: #888888;
+  opacity: 0.6;
+  margin: 0;
+  text-align: center;
+}
 
 /* ── Verification screen ── */
 .verifyIcon {
@@ -10,22 +233,24 @@
 .verifyTitle {
   font-size: 1.2rem;
   font-weight: 700;
-  color: var(--text-primary);
+  color: #ececec;
   text-align: center;
   margin: 0 0 12px;
 }
 
 .verifyText {
   font-size: 0.85rem;
-  color: var(--text-secondary);
+  color: #888888;
   text-align: center;
   line-height: 1.6;
   margin: 0 0 8px;
 }
 
+.verifyText strong { color: #ececec; }
+
 .verifyNote {
   font-size: 0.8rem;
-  color: var(--text-secondary);
+  color: #888888;
   text-align: center;
   margin: 0 0 20px;
   opacity: 0.7;
@@ -36,25 +261,26 @@
   width: 100%;
   padding: 10px;
   background: transparent;
-  border: 1px solid var(--border);
+  border: 1px solid rgba(255, 255, 255, 0.07);
   border-radius: 10px;
-  color: var(--accent-light);
+  color: #a78bfa;
   font-size: 0.82rem;
   cursor: pointer;
   transition: background 0.15s, border-color 0.15s;
   margin-top: 8px;
+  font-family: inherit;
 }
 
 .resendBtn:hover:not(:disabled) {
-  background: var(--accent-dim);
-  border-color: var(--accent);
+  background: rgba(124, 58, 237, 0.12);
+  border-color: #7c3aed;
 }
 
 .resendBtn:disabled { opacity: 0.5; cursor: not-allowed; }
 
-/* ── Error box ── */
-.loginErrorBox {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+/* ── Responsive ── */
+@media (max-width: 480px) {
+  .loginCard  { padding: 32px 24px; }
+  .loginSigma { font-size: 2.2rem; }
+  .loginName  { font-size: 1.6rem; }
 }
