@@ -1,17 +1,14 @@
 import express from "express";
-import { db } from "../config/firebase.js"; 
+import { db } from "../config/firebase.js";
 import {
   getChatResponse,
-  //getChatResponseStream,
   generateChatTitle,
 } from "../utils/groq.js";
 
 const router = express.Router();
 
-// ✅ All routes use req.user.uid (set by authMiddleware)
-
 // ═══════════════════════════════════════
-// GET /api/chat/threads — user's threads only
+// GET /api/chat/threads
 // ═══════════════════════════════════════
 router.get("/threads", async (req, res) => {
   try {
@@ -19,14 +16,16 @@ router.get("/threads", async (req, res) => {
 
     const snapshot = await db
       .collection("threads")
-      .where("userId", "==", userId) // ✅ Only this user's threads!
-      .orderBy("updatedAt", "desc")
+      .where("userId", "==", userId)
       .get();
 
     const threads = [];
     snapshot.forEach(doc => {
       threads.push({ threadId: doc.id, ...doc.data() });
     });
+
+    // Sort by updatedAt descending in JS — no index needed!
+    threads.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
 
     res.json(threads);
   } catch (error) {
@@ -49,12 +48,10 @@ router.get("/threads/:threadId", async (req, res) => {
       return res.status(404).json({ error: "Thread not found" });
     }
 
-    // ✅ Make sure this thread belongs to this user!
     if (threadDoc.data().userId !== userId) {
       return res.status(403).json({ error: "Access denied" });
     }
 
-    // Get messages subcollection
     const messagesSnapshot = await db
       .collection("threads").doc(threadId)
       .collection("messages")
@@ -72,7 +69,7 @@ router.get("/threads/:threadId", async (req, res) => {
 });
 
 // ═══════════════════════════════════════
-// POST /api/chat/chat — send message
+// POST /api/chat/chat
 // ═══════════════════════════════════════
 router.post("/chat", async (req, res) => {
   try {
@@ -83,23 +80,18 @@ router.post("/chat", async (req, res) => {
       return res.status(400).json({ error: "Message is required" });
     }
 
-    // ✅ Streaming headers
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
 
     let currentThreadId = threadId;
 
-    // ✅ Create new thread if needed
     if (!currentThreadId) {
       const newThreadRef = db.collection("threads").doc();
       currentThreadId = newThreadRef.id;
       const title = await generateChatTitle(message);
       await newThreadRef.set({
-        title,
-        userId,   // ✅ Tag with user ID
-        persona,
-        model,
+        title, userId, persona, model,
         pinned: false,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
@@ -109,22 +101,17 @@ router.post("/chat", async (req, res) => {
       if (!threadDoc.exists) {
         const title = await generateChatTitle(message);
         await db.collection("threads").doc(currentThreadId).set({
-          title,
-          userId,   // ✅ Tag with user ID
-          persona,
-          model,
+          title, userId, persona, model,
           pinned: false,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         });
       } else if (threadDoc.data().userId !== userId) {
-        // ✅ Security check — can't post to someone else's thread!
         res.write(`data: ${JSON.stringify({ error: "Access denied" })}\n\n`);
         return res.end();
       }
     }
 
-    // ✅ Save user message
     await db.collection("threads").doc(currentThreadId)
       .collection("messages").add({
         role: "user",
@@ -132,7 +119,6 @@ router.post("/chat", async (req, res) => {
         timestamp: new Date().toISOString(),
       });
 
-    // ✅ Get conversation history
     const messagesSnapshot = await db
       .collection("threads").doc(currentThreadId)
       .collection("messages")
@@ -145,14 +131,11 @@ router.post("/chat", async (req, res) => {
       history.push({ role: data.role, content: data.content });
     });
 
-   const result = await getChatResponse(history, persona, model);
+    const result = await getChatResponse(history, persona, model);
+    const fullResponse = result.content;
 
-const fullResponse = result.content;
+    res.write(`data: ${JSON.stringify({ chunk: fullResponse })}\n\n`);
 
-// send full response once
-res.write(`data: ${JSON.stringify({ chunk: fullResponse })}\n\n`);
-
-    // ✅ Save assistant message
     await db.collection("threads").doc(currentThreadId)
       .collection("messages").add({
         role: "assistant",
@@ -161,7 +144,6 @@ res.write(`data: ${JSON.stringify({ chunk: fullResponse })}\n\n`);
         persona,
       });
 
-    // ✅ Update thread timestamp
     await db.collection("threads").doc(currentThreadId).update({
       updatedAt: new Date().toISOString(),
     });
@@ -177,7 +159,7 @@ res.write(`data: ${JSON.stringify({ chunk: fullResponse })}\n\n`);
 });
 
 // ═══════════════════════════════════════
-// POST /api/chat/respond — non-streaming (for aiClient.js)
+// POST /api/chat/respond
 // ═══════════════════════════════════════
 router.post("/respond", async (req, res) => {
   try {
@@ -191,7 +173,7 @@ router.post("/respond", async (req, res) => {
 });
 
 // ═══════════════════════════════════════
-// POST /api/chat/title — generate title
+// POST /api/chat/title
 // ═══════════════════════════════════════
 router.post("/title", async (req, res) => {
   try {
@@ -215,9 +197,9 @@ router.put("/threads/:threadId/rename", async (req, res) => {
     const threadRef = db.collection("threads").doc(threadId);
     const threadDoc = await threadRef.get();
 
-    if (!threadDoc.exists)                   return res.status(404).json({ error: "Thread not found" });
-    if (threadDoc.data().userId !== userId)  return res.status(403).json({ error: "Access denied" });
-    if (!title?.trim())                      return res.status(400).json({ error: "Title required" });
+    if (!threadDoc.exists)                  return res.status(404).json({ error: "Thread not found" });
+    if (threadDoc.data().userId !== userId) return res.status(403).json({ error: "Access denied" });
+    if (!title?.trim())                     return res.status(400).json({ error: "Title required" });
 
     await threadRef.update({ title: title.trim(), updatedAt: new Date().toISOString() });
     res.json({ success: true, title: title.trim() });
@@ -264,8 +246,7 @@ router.delete("/threads/:threadId", async (req, res) => {
     if (!threadDoc.exists)                  return res.status(404).json({ error: "Thread not found" });
     if (threadDoc.data().userId !== userId) return res.status(403).json({ error: "Access denied" });
 
-    // Delete messages subcollection first
-    const messagesRef = threadRef.collection("messages");
+    const messagesRef      = threadRef.collection("messages");
     const messagesSnapshot = await messagesRef.get();
     const batch = db.batch();
     messagesSnapshot.forEach(doc => batch.delete(doc.ref));
@@ -280,13 +261,11 @@ router.delete("/threads/:threadId", async (req, res) => {
 });
 
 // ═══════════════════════════════════════
-// DELETE /api/chat/threads — clear ALL user's threads
+// DELETE /api/chat/threads — clear all
 // ═══════════════════════════════════════
 router.delete("/threads", async (req, res) => {
   try {
-    const userId = req.user.uid;
-
-    // ✅ Only delete THIS user's threads!
+    const userId   = req.user.uid;
     const snapshot = await db.collection("threads")
       .where("userId", "==", userId)
       .get();
